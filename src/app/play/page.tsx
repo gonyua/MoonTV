@@ -28,6 +28,10 @@ import PageLayout from '@/components/PageLayout';
 declare global {
   interface HTMLVideoElement {
     hls?: any;
+    webkitPresentationMode?: string;
+    webkitSupportsPresentationMode?: (mode: string) => boolean;
+    webkitSetPresentationMode?: (mode: string) => void;
+    __iosStandalonePiPHandler?: EventListener;
   }
 }
 
@@ -406,6 +410,158 @@ function PlayPageClient() {
     if (video.hasAttribute('disableRemotePlayback')) {
       video.removeAttribute('disableRemotePlayback');
     }
+
+    // 确保内联播放属性和画中画能力
+    video.playsInline = true;
+    video.setAttribute('playsinline', 'true');
+    video.setAttribute('webkit-playsinline', 'true');
+    video.setAttribute('x5-playsinline', 'true');
+    video.setAttribute('x5-video-player-type', 'h5');
+    video.setAttribute('x5-video-player-fullscreen', 'false');
+    video.setAttribute('x5-video-orientation', 'landscape');
+    if ('disablePictureInPicture' in video) {
+      try {
+        (video as any).disablePictureInPicture = false;
+      } catch (_err) {
+        // ignore
+      }
+    }
+  };
+
+  const enableIOSStandalonePictureInPicture = (art: Artplayer | null) => {
+    if (!art || typeof window === 'undefined') {
+      return;
+    }
+
+    const ua = window.navigator.userAgent || '';
+    const isIOS = /iphone|ipad|ipod/i.test(ua);
+    const isStandalone =
+      typeof window.matchMedia === 'function'
+        ? window.matchMedia('(display-mode: standalone)').matches
+        : false;
+    const nav = window.navigator as Navigator & { standalone?: boolean };
+    const isLegacyStandalone = Boolean(nav.standalone);
+
+    if (!isIOS || (!isStandalone && !isLegacyStandalone)) {
+      return;
+    }
+
+    const video = art.video as HTMLVideoElement | null;
+    if (!video) {
+      return;
+    }
+
+    ensureVideoSource(video, art.option?.url || video.src || '');
+
+    const webkitVideo = video as HTMLVideoElement & {
+      webkitPresentationMode?: string;
+      webkitSupportsPresentationMode?: (mode: string) => boolean;
+      webkitSetPresentationMode?: (mode: string) => void;
+      __iosStandalonePiPHandler?: EventListener;
+    };
+
+    const supportsPiP =
+      typeof webkitVideo.webkitSupportsPresentationMode === 'function' &&
+      webkitVideo.webkitSupportsPresentationMode('picture-in-picture');
+
+    if (!supportsPiP) {
+      return;
+    }
+
+    const controlName = 'ios-standalone-pip';
+    let controlElement =
+      ((art.controls as unknown as Record<string, HTMLElement>)[controlName] as
+        | HTMLElement
+        | undefined) || null;
+
+    const updateTooltip = (element?: HTMLElement | null) => {
+      const target = element ?? controlElement;
+      if (!target) return;
+      const isPiP = webkitVideo.webkitPresentationMode === 'picture-in-picture';
+      const label = isPiP ? '退出画中画' : '画中画';
+      target.setAttribute('data-title', label);
+      target.setAttribute('title', label);
+      target.setAttribute('aria-label', label);
+    };
+
+    const ensureModeChangeListener = () => {
+      if (webkitVideo.__iosStandalonePiPHandler) {
+        return;
+      }
+      const handler: EventListener = () => {
+        updateTooltip();
+      };
+      webkitVideo.addEventListener('webkitpresentationmodechanged', handler);
+      webkitVideo.__iosStandalonePiPHandler = handler;
+    };
+
+    if (controlElement) {
+      ensureModeChangeListener();
+      updateTooltip(controlElement);
+      return;
+    }
+
+    const handler: EventListener = () => {
+      updateTooltip();
+    };
+
+    const newControl = art.controls.add({
+      name: controlName,
+      position: 'right',
+      index: 28,
+      html: '<i class="art-icon flex"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><rect x="12.5" y="12.5" width="8.5" height="8.5" rx="1.2" ry="1.2"></rect></svg></i>',
+      tooltip: '画中画',
+      mounted(this: Artplayer, element: HTMLElement) {
+        controlElement = element;
+        updateTooltip(element);
+      },
+      beforeUnmount() {
+        controlElement = null;
+        if (webkitVideo.__iosStandalonePiPHandler) {
+          webkitVideo.removeEventListener(
+            'webkitpresentationmodechanged',
+            webkitVideo.__iosStandalonePiPHandler
+          );
+          delete webkitVideo.__iosStandalonePiPHandler;
+        }
+      },
+      click(this: Artplayer) {
+        const targetVideo = this.video as HTMLVideoElement & {
+          webkitPresentationMode?: string;
+          webkitSetPresentationMode?: (mode: string) => void;
+        };
+        if (
+          !targetVideo ||
+          typeof targetVideo.webkitSetPresentationMode !== 'function'
+        ) {
+          return;
+        }
+        const isPiP =
+          targetVideo.webkitPresentationMode === 'picture-in-picture';
+        targetVideo.webkitSetPresentationMode(
+          isPiP ? 'inline' : 'picture-in-picture'
+        );
+        updateTooltip(controlElement);
+        this.notice.show(isPiP ? '已退出画中画' : '已进入画中画');
+      },
+    });
+
+    controlElement = newControl;
+
+    webkitVideo.addEventListener('webkitpresentationmodechanged', handler);
+    webkitVideo.__iosStandalonePiPHandler = handler;
+
+    updateTooltip(newControl);
+
+    art.on('destroy', () => {
+      if (webkitVideo.__iosStandalonePiPHandler) {
+        webkitVideo.removeEventListener(
+          'webkitpresentationmodechanged',
+          webkitVideo.__iosStandalonePiPHandler
+        );
+        delete webkitVideo.__iosStandalonePiPHandler;
+      }
+    });
   };
 
   // 去广告相关函数
@@ -1096,6 +1252,12 @@ function PlayPageClient() {
         lock: true,
         moreVideoAttr: {
           crossOrigin: 'anonymous',
+          playsinline: 'true',
+          'webkit-playsinline': 'true',
+          'x5-playsinline': 'true',
+          'x5-video-player-type': 'h5',
+          'x5-video-player-fullscreen': 'false',
+          'x5-video-orientation': 'landscape',
         },
         // HLS 支持配置
         customType: {
@@ -1195,6 +1357,18 @@ function PlayPageClient() {
             },
           },
         ],
+      });
+
+      const artInstance = artPlayerRef.current;
+      const ensureIOSPiP = () => {
+        enableIOSStandalonePictureInPicture(artInstance);
+      };
+      ensureIOSPiP();
+      artInstance.on('ready', ensureIOSPiP);
+      artInstance.on('video:loadedmetadata', ensureIOSPiP);
+      artInstance.on('destroy', () => {
+        artInstance.off('ready', ensureIOSPiP);
+        artInstance.off('video:loadedmetadata', ensureIOSPiP);
       });
 
       // 监听播放器事件
