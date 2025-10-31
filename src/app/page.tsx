@@ -36,9 +36,6 @@ declare global {
       mode: 'inline' | 'picture-in-picture' | 'fullscreen'
     ) => void;
   }
-  interface Document {
-    pictureInPictureEnabled?: boolean;
-  }
 }
 
 type PiPToggleResult = 'entered' | 'exited' | 'unsupported' | 'failed';
@@ -48,10 +45,10 @@ const supportsPictureInPicture = (): boolean => {
     return false;
   }
 
-  if (
-    'pictureInPictureEnabled' in document &&
-    document.pictureInPictureEnabled
-  ) {
+  const pipEnabled =
+    (document as Document & { pictureInPictureEnabled?: boolean })
+      .pictureInPictureEnabled;
+  if (typeof pipEnabled === 'boolean' && pipEnabled) {
     return true;
   }
 
@@ -76,7 +73,9 @@ const isPictureInPictureActive = (
   if (!video) return false;
   if (
     typeof document !== 'undefined' &&
-    document.pictureInPictureElement === video
+    (document as Document & {
+      pictureInPictureElement?: Element | null;
+    }).pictureInPictureElement === video
   ) {
     return true;
   }
@@ -87,12 +86,16 @@ const togglePictureInPictureMode = async (
   video: HTMLVideoElement
 ): Promise<PiPToggleResult> => {
   try {
+    const docWithPiP = document as Document & {
+      pictureInPictureEnabled?: boolean;
+      pictureInPictureElement?: Element | null;
+    };
     if (
       typeof document !== 'undefined' &&
-      document.pictureInPictureEnabled &&
+      docWithPiP.pictureInPictureEnabled &&
       typeof video.requestPictureInPicture === 'function'
     ) {
-      if (document.pictureInPictureElement === video) {
+      if (docWithPiP.pictureInPictureElement === video) {
         await document.exitPictureInPicture();
         return 'exited';
       }
