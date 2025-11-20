@@ -14,13 +14,30 @@ export default function NotesPageClient() {
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
-    setNotes(getAllNotes());
-    setIsLoaded(true);
+    let isActive = true;
+
+    const load = async () => {
+      try {
+        const all = await getAllNotes();
+        if (isActive) {
+          setNotes(all);
+        }
+      } finally {
+        if (isActive) {
+          setIsLoaded(true);
+        }
+      }
+    };
+
+    load();
 
     const unsubscribe = subscribeToNotes((updated) => {
       setNotes([...updated]);
     });
-    return unsubscribe;
+    return () => {
+      isActive = false;
+      unsubscribe();
+    };
   }, []);
 
   const totalNotes = useMemo(() => notes.length, [notes]);

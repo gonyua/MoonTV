@@ -23,7 +23,7 @@ export default function NewNotePageClient() {
     setError(null);
     setIsSaving(true);
     try {
-      const note = createNote({ title, content });
+      const note = await createNote({ title, content });
       router.replace(`/notes/${note.id}`);
     } catch (err) {
       setError((err as Error).message || '保存失败，请稍后重试');

@@ -40,14 +40,30 @@ export default function NoteDetailPageClient({ noteId }: NoteDetailProps) {
   const [status, setStatus] = useState<string | null>(null);
 
   useEffect(() => {
-    const initial = getNoteById(noteId);
-    setNote(initial);
-    setTitle(initial?.title ?? '');
-    setContent(initial?.content ?? '');
-    setIsLoaded(true);
+    let isActive = true;
+
+    const load = async () => {
+      try {
+        const initial = await getNoteById(noteId);
+        if (!isActive) return;
+        setNote(initial);
+        setTitle(initial?.title ?? '');
+        setContent(initial?.content ?? '');
+      } catch (err) {
+        if (!isActive) return;
+        setStatus((err as Error).message || '加载笔记失败');
+      } finally {
+        if (isActive) {
+          setIsLoaded(true);
+        }
+      }
+    };
+
+    load();
 
     const unsubscribe = subscribeToNotes((notes) => {
       const updated = notes.find((item) => item.id === noteId) ?? null;
+      if (!isActive) return;
       setNote(updated);
       if (updated) {
         setTitle(updated.title);
@@ -56,6 +72,7 @@ export default function NoteDetailPageClient({ noteId }: NoteDetailProps) {
     });
 
     return () => {
+      isActive = false;
       unsubscribe();
     };
   }, [noteId]);
@@ -65,7 +82,7 @@ export default function NoteDetailPageClient({ noteId }: NoteDetailProps) {
     setIsSaving(true);
     setStatus(null);
     try {
-      const updated = updateNote(note.id, { title, content });
+      const updated = await updateNote(note.id, { title, content });
       setNote(updated);
       setIsEditing(false);
       setStatus('保存成功');
@@ -77,12 +94,16 @@ export default function NoteDetailPageClient({ noteId }: NoteDetailProps) {
     }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!note) return;
     const confirmed = window.confirm('确定要删除这条笔记吗？此操作不可撤销。');
     if (!confirmed) return;
-    deleteNote(note.id);
-    router.replace('/notes');
+    try {
+      await deleteNote(note.id);
+      router.replace('/notes');
+    } catch (err) {
+      setStatus((err as Error).message || '删除失败，请稍后重试');
+    }
   };
 
   const metadata = useMemo(() => {
