@@ -9,8 +9,11 @@ import { createNote } from '@/lib/notes.client';
 
 import { NotesStandaloneLayout } from '../NotesStandaloneLayout';
 
-type MarkdownRenderer = typeof import('react-markdown').default;
-type RemarkGfm = typeof import('remark-gfm');
+type MarkdownRenderer = (props: {
+  children?: React.ReactNode;
+  remarkPlugins?: unknown[];
+}) => JSX.Element;
+type RemarkGfm = unknown;
 
 export default function NewNotePageClient() {
   const router = useRouter();
@@ -29,8 +32,8 @@ export default function NewNotePageClient() {
       .then(([md, gfm]) => {
         if (!mounted) return;
         setMarkdown({
-          ReactMarkdown: md.default as MarkdownRenderer,
-          remarkGfm: gfm as RemarkGfm,
+          ReactMarkdown: md.default as unknown as MarkdownRenderer,
+          remarkGfm: gfm as unknown as RemarkGfm,
         });
       })
       .catch(() => {

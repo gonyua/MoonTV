@@ -23,8 +23,11 @@ import { formatNoteDate } from '@/lib/notes.utils';
 
 import { NotesStandaloneLayout } from '../NotesStandaloneLayout';
 
-type MarkdownRenderer = typeof import('react-markdown').default;
-type RemarkGfm = typeof import('remark-gfm');
+type MarkdownRenderer = (props: {
+  children?: React.ReactNode;
+  remarkPlugins?: unknown[];
+}) => JSX.Element;
+type RemarkGfm = unknown;
 
 interface NoteDetailProps {
   noteId: string;
@@ -50,8 +53,8 @@ export default function NoteDetailPageClient({ noteId }: NoteDetailProps) {
       .then(([md, gfm]) => {
         if (!mounted) return;
         setMarkdown({
-          ReactMarkdown: md.default as MarkdownRenderer,
-          remarkGfm: gfm as RemarkGfm,
+          ReactMarkdown: md.default as unknown as MarkdownRenderer,
+          remarkGfm: gfm as unknown as RemarkGfm,
         });
       })
       .catch(() => {
