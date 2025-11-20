@@ -29,6 +29,18 @@ type MarkdownRenderer = (props: {
 }) => JSX.Element;
 type RemarkGfm = unknown;
 
+function normalizeRemarkPlugin(mod: unknown): RemarkGfm {
+  if (
+    mod &&
+    typeof mod === 'object' &&
+    'default' in (mod as Record<string, unknown>)
+  ) {
+    const val = (mod as Record<string, unknown>).default;
+    return val ?? mod;
+  }
+  return mod;
+}
+
 interface NoteDetailProps {
   noteId: string;
 }
@@ -54,7 +66,7 @@ export default function NoteDetailPageClient({ noteId }: NoteDetailProps) {
         if (!mounted) return;
         setMarkdown({
           ReactMarkdown: md.default as unknown as MarkdownRenderer,
-          remarkGfm: gfm as unknown as RemarkGfm,
+          remarkGfm: normalizeRemarkPlugin(gfm),
         });
       })
       .catch(() => {
