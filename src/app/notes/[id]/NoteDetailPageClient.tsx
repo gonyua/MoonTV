@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
 import {
   deleteNote,
@@ -37,8 +37,11 @@ export default function NoteDetailPageClient({ noteId }: NoteDetailProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [markdown, setMarkdown] = useState<{
-    ReactMarkdown: typeof import('react-markdown').default;
-    remarkGfm: typeof import('remark-gfm').default;
+    ReactMarkdown: (props: {
+      children?: ReactNode;
+      remarkPlugins?: unknown[];
+    }) => JSX.Element;
+    remarkGfm: unknown;
   } | null>(null);
 
   useEffect(() => {
