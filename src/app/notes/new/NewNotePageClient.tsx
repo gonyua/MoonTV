@@ -3,8 +3,7 @@
 import { ArrowLeft, Loader2, SquarePen } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { type ComponentType, useEffect, useState } from 'react';
-import type { ReactMarkdownProps } from 'react-markdown/lib/complex-types';
+import { useEffect, useState } from 'react';
 
 import { createNote } from '@/lib/notes.client';
 
@@ -17,8 +16,8 @@ export default function NewNotePageClient() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [markdown, setMarkdown] = useState<{
-    ReactMarkdown: ComponentType<ReactMarkdownProps>;
-    remarkGfm: unknown;
+    ReactMarkdown: typeof import('react-markdown').default;
+    remarkGfm: typeof import('remark-gfm').default;
   } | null>(null);
 
   useEffect(() => {
