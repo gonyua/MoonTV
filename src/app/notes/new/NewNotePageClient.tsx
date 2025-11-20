@@ -3,11 +3,14 @@
 import { ArrowLeft, Loader2, SquarePen } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { type ReactNode, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { createNote } from '@/lib/notes.client';
 
 import { NotesStandaloneLayout } from '../NotesStandaloneLayout';
+
+type MarkdownRenderer = typeof import('react-markdown').default;
+type RemarkGfm = typeof import('remark-gfm');
 
 export default function NewNotePageClient() {
   const router = useRouter();
@@ -16,11 +19,8 @@ export default function NewNotePageClient() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [markdown, setMarkdown] = useState<{
-    ReactMarkdown: (props: {
-      children?: ReactNode;
-      remarkPlugins?: unknown[];
-    }) => JSX.Element;
-    remarkGfm: unknown;
+    ReactMarkdown: MarkdownRenderer;
+    remarkGfm: RemarkGfm;
   } | null>(null);
 
   useEffect(() => {
@@ -29,8 +29,8 @@ export default function NewNotePageClient() {
       .then(([md, gfm]) => {
         if (!mounted) return;
         setMarkdown({
-          ReactMarkdown: md.default,
-          remarkGfm: gfm.default,
+          ReactMarkdown: md.default as MarkdownRenderer,
+          remarkGfm: gfm as RemarkGfm,
         });
       })
       .catch(() => {

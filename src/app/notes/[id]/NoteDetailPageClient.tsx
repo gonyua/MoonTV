@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import {
   deleteNote,
@@ -22,6 +22,9 @@ import {
 import { formatNoteDate } from '@/lib/notes.utils';
 
 import { NotesStandaloneLayout } from '../NotesStandaloneLayout';
+
+type MarkdownRenderer = typeof import('react-markdown').default;
+type RemarkGfm = typeof import('remark-gfm');
 
 interface NoteDetailProps {
   noteId: string;
@@ -37,11 +40,8 @@ export default function NoteDetailPageClient({ noteId }: NoteDetailProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [markdown, setMarkdown] = useState<{
-    ReactMarkdown: (props: {
-      children?: ReactNode;
-      remarkPlugins?: unknown[];
-    }) => JSX.Element;
-    remarkGfm: unknown;
+    ReactMarkdown: MarkdownRenderer;
+    remarkGfm: RemarkGfm;
   } | null>(null);
 
   useEffect(() => {
@@ -50,8 +50,8 @@ export default function NoteDetailPageClient({ noteId }: NoteDetailProps) {
       .then(([md, gfm]) => {
         if (!mounted) return;
         setMarkdown({
-          ReactMarkdown: md.default,
-          remarkGfm: gfm.default,
+          ReactMarkdown: md.default as MarkdownRenderer,
+          remarkGfm: gfm as RemarkGfm,
         });
       })
       .catch(() => {
