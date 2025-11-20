@@ -1,13 +1,13 @@
 'use client';
 
-import { Clock3, NotebookTabs, Plus, Wand2 } from 'lucide-react';
+import { Clock3, Plus, Wand2 } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 
 import { getAllNotes, NoteItem, subscribeToNotes } from '@/lib/notes.client';
 import { createPreview, formatNoteDate } from '@/lib/notes.utils';
 
-import PageLayout from '@/components/PageLayout';
+import { NotesStandaloneLayout } from './NotesStandaloneLayout';
 
 export default function NotesPageClient() {
   const [notes, setNotes] = useState<NoteItem[]>([]);
@@ -43,23 +43,14 @@ export default function NotesPageClient() {
   const totalNotes = useMemo(() => notes.length, [notes]);
 
   return (
-    <PageLayout activePath='/notes'>
-      <div className='px-4 sm:px-10 py-6 sm:py-10'>
-        <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8'>
-          <div>
-            <h1 className='text-2xl font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2'>
-              <NotebookTabs className='w-6 h-6 text-green-600' />
-              我的笔记
-            </h1>
-            <p className='text-sm text-gray-500 dark:text-gray-400 mt-1'>
-              保存观影心得、待看片单或任何灵感想法，支持 Markdown 格式。
-            </p>
-          </div>
+    <NotesStandaloneLayout>
+      <div className='space-y-6'>
+        <div className='flex justify-start'>
           <Link
             href='/notes/new'
-            className='inline-flex items-center justify-center gap-2 rounded-xl bg-green-600 px-4 py-2 text-white font-medium shadow-lg shadow-green-500/30 hover:bg-green-700 transition-colors duration-200'
+            className='inline-flex items-center justify-center gap-2 rounded-xl bg-green-600 px-4 py-2 text-white font-medium shadow-lg shadow-green-500/30 transition-colors duration-200 hover:bg-green-700'
           >
-            <Plus className='w-4 h-4' />
+            <Plus className='h-4 w-4' />
             新建笔记
           </Link>
         </div>
@@ -91,7 +82,7 @@ export default function NotesPageClient() {
           </div>
         )}
       </div>
-    </PageLayout>
+    </NotesStandaloneLayout>
   );
 }
 

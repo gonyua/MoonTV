@@ -35,3 +35,10 @@
 - 环境变量放入 `.env.local`（例如 `PASSWORD`、`USERNAME`、`NEXT_PUBLIC_STORAGE_TYPE`、`REDIS_URL`、`UPSTASH_TOKEN`、Cloudflare D1 绑定名等），严禁提交敏感值。
 - 修改 `config.json` 后可执行 `pnpm gen:runtime` 以同步生产配置；部署到 Vercel/Cloudflare 时仅暴露必要的 NEXT_PUBLIC 前缀变量。
 - 若使用 Docker/Compose，确保监听端口与存储卷权限正确；公共部署应更换默认口令并开启 HTTPS/反向代理限流。\*\*\*
+
+## Cloudflare Pages 部署注意事项
+
+- Edge Runtime 必须显式声明：非静态 App 路由需导出 `export const runtime = 'edge';`。笔记页（`src/app/notes/page.tsx`、`src/app/notes/new/page.tsx`、`src/app/notes/[id]/page.tsx`）依赖 Edge，遗漏会导致 next-on-pages 报 “route not configured for edge” 并中止构建。
+- ESM 组件用动态导入：Node16/CJS 语义下静态导入 ESM 包（如 `react-markdown`、`remark-gfm`）会触发 “CJS import ESM” 报错。前端 Markdown 已改用 `import()`。新增类似包时保持客户端组件 + 动态导入。
+- D1 配置必需：绑定名 `DB`，部署时设置 `NEXT_PUBLIC_STORAGE_TYPE=d1`（或 runtime config 同值）才能写入 D1；未绑定会回退 localStorage 或报 DB 缺失。
+- 本地调试 D1：用 `wrangler pages dev . --d1=DB=<数据库名>` 注入绑定，否则默认 localStorage。

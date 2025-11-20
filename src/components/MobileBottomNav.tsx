@@ -2,15 +2,7 @@
 
 'use client';
 
-import {
-  Clover,
-  Film,
-  Home,
-  NotebookPen,
-  Search,
-  Star,
-  Tv,
-} from 'lucide-react';
+import { Clover, Film, Home, Search, Star, Tv } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -31,7 +23,6 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
   const [navItems, setNavItems] = useState([
     { icon: Home, label: '首页', href: '/' },
     { icon: Search, label: '搜索', href: '/search' },
-    { icon: NotebookPen, label: '笔记', href: '/notes' },
     {
       icon: Film,
       label: '电影',

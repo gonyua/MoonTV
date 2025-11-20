@@ -3,12 +3,11 @@
 import { ArrowLeft, Loader2, SquarePen } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import type { ComponentType } from 'react';
+import { type ComponentType, useEffect, useState } from 'react';
 
 import { createNote } from '@/lib/notes.client';
 
-import PageLayout from '@/components/PageLayout';
+import { NotesStandaloneLayout } from '../NotesStandaloneLayout';
 
 export default function NewNotePageClient() {
   const router = useRouter();
@@ -17,7 +16,7 @@ export default function NewNotePageClient() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [markdown, setMarkdown] = useState<{
-    ReactMarkdown: ComponentType<any>;
+    ReactMarkdown: ComponentType<unknown>;
     remarkGfm: unknown;
   } | null>(null);
 
@@ -54,8 +53,8 @@ export default function NewNotePageClient() {
   };
 
   return (
-    <PageLayout activePath='/notes'>
-      <div className='px-4 sm:px-10 py-6 sm:py-10'>
+    <NotesStandaloneLayout>
+      <div className='rounded-3xl border border-gray-100 bg-white/80 px-4 py-6 shadow-sm dark:border-gray-800 dark:bg-gray-900/60 sm:px-6 sm:py-8'>
         <div className='mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between'>
           <div className='flex items-center gap-3'>
             <Link
@@ -66,9 +65,6 @@ export default function NewNotePageClient() {
               返回列表
             </Link>
             <div>
-              <p className='text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400'>
-                笔记
-              </p>
               <h1 className='text-2xl font-semibold text-gray-900 dark:text-gray-100'>
                 新建笔记
               </h1>
@@ -88,7 +84,7 @@ export default function NewNotePageClient() {
               <input
                 type='text'
                 className='w-full rounded-2xl border border-gray-200 bg-white/80 px-4 py-3 text-base text-gray-900 focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-200 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-100'
-                placeholder='例如：最近看的片单、灵感记录...'
+                placeholder='例如：灵感记录...'
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
               />
@@ -147,6 +143,6 @@ export default function NewNotePageClient() {
           </div>
         </form>
       </div>
-    </PageLayout>
+    </NotesStandaloneLayout>
   );
 }
