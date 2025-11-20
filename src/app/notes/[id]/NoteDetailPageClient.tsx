@@ -11,6 +11,7 @@ import {
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
+import type { ComponentType } from 'react';
 
 import {
   deleteNote,
@@ -37,8 +38,8 @@ export default function NoteDetailPageClient({ noteId }: NoteDetailProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [markdown, setMarkdown] = useState<{
-    ReactMarkdown: typeof import('react-markdown').default;
-    remarkGfm: typeof import('remark-gfm').default;
+    ReactMarkdown: ComponentType<any>;
+    remarkGfm: unknown;
   } | null>(null);
 
   useEffect(() => {
