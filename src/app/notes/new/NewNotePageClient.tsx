@@ -3,9 +3,7 @@
 import { ArrowLeft, Loader2, SquarePen } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { useEffect, useState } from 'react';
 
 import { createNote } from '@/lib/notes.client';
 
@@ -17,6 +15,28 @@ export default function NewNotePageClient() {
   const [content, setContent] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [markdown, setMarkdown] = useState<{
+    ReactMarkdown: typeof import('react-markdown').default;
+    remarkGfm: typeof import('remark-gfm').default;
+  } | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    Promise.all([import('react-markdown'), import('remark-gfm')])
+      .then(([md, gfm]) => {
+        if (!mounted) return;
+        setMarkdown({
+          ReactMarkdown: md.default,
+          remarkGfm: gfm.default,
+        });
+      })
+      .catch(() => {
+        setError('Markdown 组件加载失败');
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -113,10 +133,10 @@ export default function NewNotePageClient() {
               实时预览
             </p>
             <div className='prose prose-sm max-w-none text-gray-800 dark:prose-invert dark:text-gray-100'>
-              {content ? (
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {content && markdown ? (
+                <markdown.ReactMarkdown remarkPlugins={[markdown.remarkGfm]}>
                   {content}
-                </ReactMarkdown>
+                </markdown.ReactMarkdown>
               ) : (
                 <p className='text-gray-400 dark:text-gray-500'>
                   输入正文即可在此查看 Markdown 预览。

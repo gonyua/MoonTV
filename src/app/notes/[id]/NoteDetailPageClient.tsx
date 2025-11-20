@@ -11,8 +11,6 @@ import {
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 
 import {
   deleteNote,
@@ -38,6 +36,28 @@ export default function NoteDetailPageClient({ noteId }: NoteDetailProps) {
   const [content, setContent] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const [markdown, setMarkdown] = useState<{
+    ReactMarkdown: typeof import('react-markdown').default;
+    remarkGfm: typeof import('remark-gfm').default;
+  } | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    Promise.all([import('react-markdown'), import('remark-gfm')])
+      .then(([md, gfm]) => {
+        if (!mounted) return;
+        setMarkdown({
+          ReactMarkdown: md.default,
+          remarkGfm: gfm.default,
+        });
+      })
+      .catch(() => {
+        setStatus('Markdown 组件加载失败');
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     let isActive = true;
@@ -206,10 +226,10 @@ export default function NoteDetailPageClient({ noteId }: NoteDetailProps) {
             正文
           </h2>
           <div className='prose max-w-none text-gray-800 dark:prose-invert dark:text-gray-100'>
-            {note.content ? (
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {note.content && markdown ? (
+              <markdown.ReactMarkdown remarkPlugins={[markdown.remarkGfm]}>
                 {note.content}
-              </ReactMarkdown>
+              </markdown.ReactMarkdown>
             ) : (
               <p className='text-gray-500 dark:text-gray-400'>暂无内容</p>
             )}
@@ -272,10 +292,12 @@ export default function NoteDetailPageClient({ noteId }: NoteDetailProps) {
                   实时预览
                 </p>
                 <div className='prose prose-sm max-w-none text-gray-800 dark:prose-invert dark:text-gray-100'>
-                  {content ? (
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {content && markdown ? (
+                    <markdown.ReactMarkdown
+                      remarkPlugins={[markdown.remarkGfm]}
+                    >
                       {content}
-                    </ReactMarkdown>
+                    </markdown.ReactMarkdown>
                   ) : (
                     <p className='text-gray-400 dark:text-gray-500'>
                       输入内容即可预览效果。
