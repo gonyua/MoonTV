@@ -96,7 +96,7 @@ export default function NewNotePageClient() {
               正文（支持 Markdown）
             </label>
             <textarea
-              className='w-full min-h-[360px] rounded-2xl border border-gray-200 bg-white/80 px-4 py-3 text-sm text-gray-900 focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-200 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-100'
+              className='w-full min-h-[360px] rounded-2xl border border-gray-200 bg-white/80 px-4 py-3 text-base text-gray-900 focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-200 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-100'
               placeholder='记录想法，支持 *强调*、`代码`、列表等语法。'
               value={content}
               onChange={(e) => setContent(e.target.value)}
