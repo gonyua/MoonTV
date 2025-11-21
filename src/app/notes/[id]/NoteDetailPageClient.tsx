@@ -11,7 +11,7 @@ import {
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
-import { isValidElement, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import {
   deleteNote,
@@ -24,7 +24,7 @@ import { formatNoteDate } from '@/lib/notes.utils';
 
 import { NotesStandaloneLayout } from '../NotesStandaloneLayout';
 
-// 修复点：在这里添加 components 属性的定义
+// 定义 Markdown 渲染器的类型
 type MarkdownRenderer = (props: {
   children?: React.ReactNode;
   remarkPlugins?: unknown[];
@@ -64,36 +64,61 @@ export default function NoteDetailPageClient({ noteId }: NoteDetailProps) {
     remarkGfm: RemarkGfm;
   } | null>(null);
 
+  // --- 核心修改：拦截链接渲染逻辑 ---
   const markdownComponents = useMemo(
     () => ({
-      p: ({ children }: { children: ReactNode[] }) => {
-        const child = Array.isArray(children) ? children[0] : null;
-        const href =
-          isValidElement(child) && typeof child.props?.href === 'string'
-            ? child.props.href
-            : null;
+      // 拦截所有链接 (a 标签)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      a: (props: any) => {
+        const { href, children } = props;
+        // 判断链接是否是 .mp4 (忽略大小写，支持带参数的url)
         const isMp4 = href ? /\.mp4($|[?#])/i.test(href) : false;
 
-        if (
-          isMp4 &&
-          Array.isArray(children) &&
-          children.length === 1 &&
-          isValidElement(child)
-        ) {
+        if (isMp4) {
           return (
             <div className='my-4 overflow-hidden rounded-2xl border border-gray-200 bg-black shadow-sm dark:border-gray-700'>
-              <video controls className='h-auto w-full' src={href ?? ''}>
-                您的浏览器不支持视频播放
+              {/* 直接渲染 video 标签 */}
+              <video controls className='h-auto w-full' preload='metadata'>
+                <source src={href} type='video/mp4' />
+                <p className='p-4 text-white'>您的浏览器不支持视频播放</p>
               </video>
             </div>
           );
         }
 
-        return <p>{children}</p>;
+        // 如果不是 mp4，正常渲染链接
+        return (
+          <a
+            {...props}
+            target='_blank'
+            rel='noopener noreferrer'
+            className='text-green-600 hover:underline break-all'
+          >
+            {children}
+          </a>
+        );
+      },
+      // 同时也拦截图片语法 ![](url.mp4)，防止用户误用
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      img: (props: any) => {
+        const { src, alt } = props;
+        const isMp4 = src ? /\.mp4($|[?#])/i.test(src) : false;
+        if (isMp4) {
+          return (
+            <div className='my-4 overflow-hidden rounded-2xl border border-gray-200 bg-black shadow-sm dark:border-gray-700'>
+              <video controls className='h-auto w-full' preload='metadata'>
+                <source src={src} type='video/mp4' />
+              </video>
+            </div>
+          );
+        }
+        // eslint-disable-next-line @next/next/no-img-element
+        return <img src={src} alt={alt} className='rounded-xl max-w-full' />;
       },
     }),
     []
   );
+  // -------------------------------------------
 
   useEffect(() => {
     let mounted = true;
@@ -205,14 +230,6 @@ export default function NoteDetailPageClient({ noteId }: NoteDetailProps) {
         <Edit3 className='w-4 h-4' />
         {isEditing ? '取消编辑' : '编辑'}
       </button>
-      <button
-        type='button'
-        onClick={handleDelete}
-        className='inline-flex items-center gap-2 rounded-full border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors dark:border-red-500/40 dark:text-red-400 dark:hover:bg-red-500/10'
-      >
-        <Trash2 className='w-4 h-4' />
-        删除
-      </button>
     </div>
   ) : (
     <Link
@@ -300,6 +317,7 @@ export default function NoteDetailPageClient({ noteId }: NoteDetailProps) {
                 </label>
                 <textarea
                   className='w-full min-h-[280px] rounded-2xl border border-gray-200 bg-white/80 px-4 py-3 text-base text-gray-900 focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-200 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-100'
+                  placeholder='输入视频链接 https://...mp4 即可直接预览播放'
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
                 />
@@ -369,6 +387,17 @@ export default function NoteDetailPageClient({ noteId }: NoteDetailProps) {
             ))}
           </div>
         )}
+
+        <div className='flex justify-start'>
+          <button
+            type='button'
+            onClick={handleDelete}
+            className='inline-flex items-center gap-2 rounded-full border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors dark:border-red-500/40 dark:text-red-400 dark:hover:bg-red-500/10'
+          >
+            <Trash2 className='w-4 h-4' />
+            删除
+          </button>
+        </div>
       </div>
     </NotesStandaloneLayout>
   );
