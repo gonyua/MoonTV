@@ -10,7 +10,8 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
+import { isValidElement, useEffect, useMemo, useState } from 'react';
 
 import {
   deleteNote,
@@ -23,10 +24,14 @@ import { formatNoteDate } from '@/lib/notes.utils';
 
 import { NotesStandaloneLayout } from '../NotesStandaloneLayout';
 
+// 修复点：在这里添加 components 属性的定义
 type MarkdownRenderer = (props: {
   children?: React.ReactNode;
   remarkPlugins?: unknown[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  components?: Record<string, any>;
 }) => JSX.Element;
+
 type RemarkGfm = unknown;
 
 function normalizeRemarkPlugin(mod: unknown): RemarkGfm {
@@ -58,6 +63,37 @@ export default function NoteDetailPageClient({ noteId }: NoteDetailProps) {
     ReactMarkdown: MarkdownRenderer;
     remarkGfm: RemarkGfm;
   } | null>(null);
+
+  const markdownComponents = useMemo(
+    () => ({
+      p: ({ children }: { children: ReactNode[] }) => {
+        const child = Array.isArray(children) ? children[0] : null;
+        const href =
+          isValidElement(child) && typeof child.props?.href === 'string'
+            ? child.props.href
+            : null;
+        const isMp4 = href ? /\.mp4($|[?#])/i.test(href) : false;
+
+        if (
+          isMp4 &&
+          Array.isArray(children) &&
+          children.length === 1 &&
+          isValidElement(child)
+        ) {
+          return (
+            <div className='my-4 overflow-hidden rounded-2xl border border-gray-200 bg-black shadow-sm dark:border-gray-700'>
+              <video controls className='h-auto w-full' src={href ?? ''}>
+                您的浏览器不支持视频播放
+              </video>
+            </div>
+          );
+        }
+
+        return <p>{children}</p>;
+      },
+    }),
+    []
+  );
 
   useEffect(() => {
     let mounted = true;
@@ -152,9 +188,45 @@ export default function NoteDetailPageClient({ noteId }: NoteDetailProps) {
     ];
   }, [note]);
 
+  const headerActions = note ? (
+    <div className='flex flex-wrap items-center gap-3'>
+      <Link
+        href='/notes'
+        className='inline-flex items-center gap-2 rounded-full border border-gray-200 px-3 py-1 text-base text-gray-600 hover:border-green-200 hover:text-green-600 transition-colors dark:border-gray-700 dark:text-gray-300 dark:hover:border-green-500/50 dark:hover:text-green-400'
+      >
+        <ArrowLeft className='w-4 h-4' />
+        返回列表
+      </Link>
+      <button
+        type='button'
+        onClick={() => setIsEditing((prev) => !prev)}
+        className='inline-flex items-center gap-2 rounded-full border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:border-green-200 hover:text-green-600 transition-colors dark:border-gray-600 dark:text-gray-300 dark:hover:border-green-500/50 dark:hover:text-green-400'
+      >
+        <Edit3 className='w-4 h-4' />
+        {isEditing ? '取消编辑' : '编辑'}
+      </button>
+      <button
+        type='button'
+        onClick={handleDelete}
+        className='inline-flex items-center gap-2 rounded-full border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors dark:border-red-500/40 dark:text-red-400 dark:hover:bg-red-500/10'
+      >
+        <Trash2 className='w-4 h-4' />
+        删除
+      </button>
+    </div>
+  ) : (
+    <Link
+      href='/notes'
+      className='inline-flex items-center gap-2 rounded-full border border-gray-200 px-3 py-1 text-base text-gray-600 hover:border-green-200 hover:text-green-600 transition-colors dark:border-gray-700 dark:text-gray-300 dark:hover:border-green-500/50 dark:hover:text-green-400'
+    >
+      <ArrowLeft className='w-4 h-4' />
+      返回列表
+    </Link>
+  );
+
   if (!isLoaded) {
     return (
-      <NotesStandaloneLayout>
+      <NotesStandaloneLayout leftSlot={headerActions}>
         <div className='flex flex-col items-center gap-4 rounded-3xl border border-gray-100 bg-white/80 px-6 py-12 text-gray-500 shadow-sm dark:border-gray-800 dark:bg-gray-900/60 dark:text-gray-400'>
           <Loader2 className='h-6 w-6 animate-spin' />
           <span>加载笔记中...</span>
@@ -165,7 +237,7 @@ export default function NoteDetailPageClient({ noteId }: NoteDetailProps) {
 
   if (!note) {
     return (
-      <NotesStandaloneLayout>
+      <NotesStandaloneLayout leftSlot={headerActions}>
         <div className='px-4 py-12 text-center sm:px-8'>
           <div className='mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-300'>
             <WandSparkles className='h-7 w-7' />
@@ -176,52 +248,17 @@ export default function NoteDetailPageClient({ noteId }: NoteDetailProps) {
           <p className='mt-2 text-sm text-gray-500 dark:text-gray-400'>
             可能已经被删除，或尚未创建。
           </p>
-          <Link
-            href='/notes'
-            className='mt-6 inline-flex items-center gap-2 rounded-full border border-gray-200 px-4 py-2 text-sm text-gray-700 transition-colors hover:border-green-200 hover:text-green-600 dark:border-gray-700 dark:text-gray-300 dark:hover:border-green-500/50 dark:hover:text-green-400'
-          >
-            返回列表
-          </Link>
         </div>
       </NotesStandaloneLayout>
     );
   }
 
   return (
-    <NotesStandaloneLayout>
+    <NotesStandaloneLayout leftSlot={headerActions}>
       <div className='space-y-6'>
-        <div className='flex flex-col gap-2'>
-          <div className='flex items-center justify-between gap-3'>
-            <Link
-              href='/notes'
-              className='inline-flex items-center gap-2 text-sm text-gray-500 hover:text-green-600 dark:text-gray-400 dark:hover:text-green-400'
-            >
-              <ArrowLeft className='w-4 h-4' />
-              返回笔记列表
-            </Link>
-            <div className='flex flex-wrap items-center gap-3'>
-              <button
-                type='button'
-                onClick={() => setIsEditing((prev) => !prev)}
-                className='inline-flex items-center gap-2 rounded-full border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:border-green-200 hover:text-green-600 transition-colors dark:border-gray-600 dark:text-gray-300 dark:hover:border-green-500/50 dark:hover:text-green-400'
-              >
-                <Edit3 className='w-4 h-4' />
-                {isEditing ? '取消编辑' : '编辑'}
-              </button>
-              <button
-                type='button'
-                onClick={handleDelete}
-                className='inline-flex items-center gap-2 rounded-full border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors dark:border-red-500/40 dark:text-red-400 dark:hover:bg-red-500/10'
-              >
-                <Trash2 className='w-4 h-4' />
-                删除
-              </button>
-            </div>
-          </div>
-          <h1 className='text-2xl font-bold text-gray-900 dark:text-gray-50'>
-            {note.title}
-          </h1>
-        </div>
+        <h1 className='text-2xl font-bold text-gray-900 dark:text-gray-50'>
+          {note.title}
+        </h1>
 
         {!isEditing && (
           <div className='rounded-3xl border border-gray-100 bg-white/90 p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900/70'>
@@ -230,7 +267,10 @@ export default function NoteDetailPageClient({ noteId }: NoteDetailProps) {
             </h2>
             <div className='prose max-w-none text-gray-800 dark:prose-invert dark:text-gray-100'>
               {note.content && markdown ? (
-                <markdown.ReactMarkdown remarkPlugins={[markdown.remarkGfm]}>
+                <markdown.ReactMarkdown
+                  remarkPlugins={[markdown.remarkGfm]}
+                  components={markdownComponents}
+                >
                   {note.content}
                 </markdown.ReactMarkdown>
               ) : (
@@ -296,7 +336,10 @@ export default function NoteDetailPageClient({ noteId }: NoteDetailProps) {
               </p>
               <div className='prose prose-sm max-w-none text-gray-800 dark:prose-invert dark:text-gray-100'>
                 {content && markdown ? (
-                  <markdown.ReactMarkdown remarkPlugins={[markdown.remarkGfm]}>
+                  <markdown.ReactMarkdown
+                    remarkPlugins={[markdown.remarkGfm]}
+                    components={markdownComponents}
+                  >
                     {content}
                   </markdown.ReactMarkdown>
                 ) : (

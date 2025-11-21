@@ -4,7 +4,14 @@ import { ArrowLeft, Loader2, SquarePen } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 // 我把 type 引用合并到了这里，并且按字母顺序调整了库的位置
-import { type ComponentType, useEffect, useState } from 'react';
+import {
+  type ComponentType,
+  type ReactNode,
+  isValidElement,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 
 import { createNote } from '@/lib/notes.client';
 
@@ -54,25 +61,54 @@ export default function NewNotePageClient() {
     }
   };
 
-  return (
-    <NotesStandaloneLayout>
-      <div className='mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between'>
-        <div className='flex items-center gap-3'>
-          <Link
-            href='/notes'
-            className='inline-flex items-center gap-2 rounded-full border border-gray-200 px-3 py-1 text-sm text-gray-600 hover:border-green-200 hover:text-green-600 transition-colors dark:border-gray-700 dark:text-gray-300 dark:hover:border-green-500/50 dark:hover:text-green-400'
-          >
-            <ArrowLeft className='w-4 h-4' />
-            返回列表
-          </Link>
-          <div>
-            <h1 className='text-2xl font-semibold text-gray-900 dark:text-gray-100'>
-              新建笔记
-            </h1>
-          </div>
-        </div>
-      </div>
+  const markdownComponents = useMemo(
+    () => ({
+      p: ({ children }: { children: ReactNode[] }) => {
+        const child = Array.isArray(children) ? children[0] : null;
+        const href =
+          isValidElement(child) && typeof child.props?.href === 'string'
+            ? child.props.href
+            : null;
+        const isMp4 = href ? /\.mp4($|[?#])/i.test(href) : false;
 
+        if (
+          isMp4 &&
+          Array.isArray(children) &&
+          children.length === 1 &&
+          isValidElement(child)
+        ) {
+          return (
+            <div className='my-4 overflow-hidden rounded-2xl border border-gray-200 bg-black shadow-sm dark:border-gray-700'>
+              <video controls className='h-auto w-full' src={href ?? ''}>
+                您的浏览器不支持视频播放
+              </video>
+            </div>
+          );
+        }
+
+        return <p>{children}</p>;
+      },
+    }),
+    []
+  );
+
+  const headerActions = (
+    <div className='flex items-center gap-3'>
+      <Link
+        href='/notes'
+        className='inline-flex items-center gap-2 rounded-full border border-gray-200 px-3 py-1 text-base text-gray-600 hover:border-green-200 hover:text-green-600 transition-colors dark:border-gray-700 dark:text-gray-300 dark:hover:border-green-500/50 dark:hover:text-green-400'
+      >
+        <ArrowLeft className='w-4 h-4' />
+        返回列表
+      </Link>
+      <h1 className='text-xl font-semibold text-gray-900 dark:text-gray-100 sm:text-2xl'>
+        新建笔记
+      </h1>
+    </div>
+  );
+
+  return (
+    <NotesStandaloneLayout leftSlot={headerActions}>
       <form
         onSubmit={handleCreate}
         className='grid gap-6 lg:grid-cols-2 lg:items-start'
@@ -132,7 +168,10 @@ export default function NewNotePageClient() {
           </p>
           <div className='prose prose-sm max-w-none text-gray-800 dark:prose-invert dark:text-gray-100'>
             {content && markdown ? (
-              <markdown.ReactMarkdown remarkPlugins={[markdown.remarkGfm]}>
+              <markdown.ReactMarkdown
+                remarkPlugins={[markdown.remarkGfm]}
+                components={markdownComponents}
+              >
                 {content}
               </markdown.ReactMarkdown>
             ) : (

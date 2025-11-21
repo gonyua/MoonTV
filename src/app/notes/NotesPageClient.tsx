@@ -43,18 +43,18 @@ export default function NotesPageClient() {
   const totalNotes = useMemo(() => notes.length, [notes]);
 
   return (
-    <NotesStandaloneLayout>
+    <NotesStandaloneLayout
+      leftSlot={
+        <Link
+          href='/notes/new'
+          className='inline-flex items-center justify-center gap-2 rounded-xl bg-green-600 px-4 py-2 text-white font-medium shadow-lg shadow-green-500/30 transition-colors duration-200 hover:bg-green-700'
+        >
+          <Plus className='h-4 w-4' />
+          新建笔记
+        </Link>
+      }
+    >
       <div className='space-y-6'>
-        <div className='flex justify-start'>
-          <Link
-            href='/notes/new'
-            className='inline-flex items-center justify-center gap-2 rounded-xl bg-green-600 px-4 py-2 text-white font-medium shadow-lg shadow-green-500/30 transition-colors duration-200 hover:bg-green-700'
-          >
-            <Plus className='h-4 w-4' />
-            新建笔记
-          </Link>
-        </div>
-
         {totalNotes === 0 && isLoaded ? (
           <EmptyState />
         ) : (
