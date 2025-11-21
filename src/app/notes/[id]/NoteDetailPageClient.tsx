@@ -241,73 +241,69 @@ export default function NoteDetailPageClient({ noteId }: NoteDetailProps) {
         )}
 
         {isEditing && (
-          <div className='rounded-3xl border border-gray-100 bg-white/90 p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900/70'>
-            <div className='grid gap-6 lg:grid-cols-2'>
-              <div className='space-y-4'>
-                <div>
-                  <label className='mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200'>
-                    标题
-                  </label>
-                  <input
-                    type='text'
-                    className='w-full rounded-2xl border border-gray-200 bg-white/80 px-4 py-3 text-base text-gray-900 focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-200 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-100'
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className='mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200'>
-                    正文（Markdown）
-                  </label>
-                  <textarea
-                    className='w-full min-h-[280px] rounded-2xl border border-gray-200 bg-white/80 px-4 py-3 text-sm text-gray-900 focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-200 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-100'
-                    value={content}
-                    onChange={(e) => setContent(e.target.value)}
-                  />
-                </div>
-                <div className='flex items-center justify-between gap-3 flex-wrap'>
-                  {status && (
-                    <span className='text-sm text-green-600 dark:text-green-400'>
-                      {status}
-                    </span>
-                  )}
-                  <button
-                    type='button'
-                    onClick={handleSave}
-                    disabled={isSaving}
-                    className='inline-flex items-center gap-2 rounded-2xl bg-green-600 px-4 py-2 text-white font-medium shadow-lg shadow-green-500/30 hover:bg-green-700 transition-colors disabled:opacity-60'
-                  >
-                    {isSaving ? (
-                      <>
-                        <Loader2 className='w-4 h-4 animate-spin' />
-                        保存中...
-                      </>
-                    ) : (
-                      <>
-                        <Save className='w-4 h-4' />
-                        保存更改
-                      </>
-                    )}
-                  </button>
-                </div>
+          <div className='grid gap-6 lg:grid-cols-2 lg:items-start'>
+            <div className='space-y-4'>
+              <div>
+                <label className='mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200'>
+                  标题
+                </label>
+                <input
+                  type='text'
+                  className='w-full rounded-2xl border border-gray-200 bg-white/80 px-4 py-3 text-base text-gray-900 focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-200 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-100'
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                />
               </div>
               <div>
-                <p className='mb-2 text-sm font-medium text-gray-500 dark:text-gray-400'>
-                  实时预览
-                </p>
-                <div className='prose prose-sm max-w-none text-gray-800 dark:prose-invert dark:text-gray-100'>
-                  {content && markdown ? (
-                    <markdown.ReactMarkdown
-                      remarkPlugins={[markdown.remarkGfm]}
-                    >
-                      {content}
-                    </markdown.ReactMarkdown>
+                <label className='mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200'>
+                  正文（Markdown）
+                </label>
+                <textarea
+                  className='w-full min-h-[280px] rounded-2xl border border-gray-200 bg-white/80 px-4 py-3 text-sm text-gray-900 focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-200 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-100'
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                />
+              </div>
+              <div className='flex items-center justify-between gap-3 flex-wrap'>
+                {status && (
+                  <span className='text-sm text-green-600 dark:text-green-400'>
+                    {status}
+                  </span>
+                )}
+                <button
+                  type='button'
+                  onClick={handleSave}
+                  disabled={isSaving}
+                  className='inline-flex items-center gap-2 rounded-2xl bg-green-600 px-4 py-2 text-white font-medium shadow-lg shadow-green-500/30 hover:bg-green-700 transition-colors disabled:opacity-60'
+                >
+                  {isSaving ? (
+                    <>
+                      <Loader2 className='w-4 h-4 animate-spin' />
+                      保存中...
+                    </>
                   ) : (
-                    <p className='text-gray-400 dark:text-gray-500'>
-                      输入内容即可预览效果。
-                    </p>
+                    <>
+                      <Save className='w-4 h-4' />
+                      保存更改
+                    </>
                   )}
-                </div>
+                </button>
+              </div>
+            </div>
+            <div>
+              <p className='mb-2 text-sm font-medium text-gray-500 dark:text-gray-400'>
+                实时预览
+              </p>
+              <div className='prose prose-sm max-w-none text-gray-800 dark:prose-invert dark:text-gray-100'>
+                {content && markdown ? (
+                  <markdown.ReactMarkdown remarkPlugins={[markdown.remarkGfm]}>
+                    {content}
+                  </markdown.ReactMarkdown>
+                ) : (
+                  <p className='text-gray-400 dark:text-gray-500'>
+                    输入内容即可预览效果。
+                  </p>
+                )}
               </div>
             </div>
           </div>

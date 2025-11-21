@@ -96,7 +96,7 @@ function EmptyState() {
         还没有笔记
       </h3>
       <p className='mt-2 text-sm text-gray-500 dark:text-gray-400'>
-        记录观影心得、收藏片源或整理 TODO，点击右上角的新建按钮开始吧。
+        记录任意灵感，点击左上角的新建按钮开始吧。
       </p>
     </div>
   );
