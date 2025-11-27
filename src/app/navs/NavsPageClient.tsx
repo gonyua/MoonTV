@@ -6,6 +6,7 @@ import { getNavsData, subscribeToNavsUpdates } from '@/lib/navs.client';
 import { NavCategory, NavsData, NavSite } from '@/lib/navs.types';
 
 import NavsCategoryModal from '@/components/navs/NavsCategoryModal';
+import NavsImportModal from '@/components/navs/NavsImportModal';
 import NavsSidebar from '@/components/navs/NavsSidebar';
 import NavsSiteList from '@/components/navs/NavsSiteList';
 import NavsSiteModal from '@/components/navs/NavsSiteModal';
@@ -19,6 +20,7 @@ export default function NavsPageClient() {
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [siteModalOpen, setSiteModalOpen] = useState(false);
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
   const [editingSite, setEditingSite] = useState<NavSite | null>(null);
   const [editingCategory, setEditingCategory] = useState<NavCategory | null>(
     null
@@ -76,6 +78,10 @@ export default function NavsPageClient() {
     setCategoryModalOpen(true);
   }, []);
 
+  const handleImport = useCallback(() => {
+    setImportModalOpen(true);
+  }, []);
+
   const handleTagSelect = useCallback((tag: string | null) => {
     setSelectedTag(tag);
   }, []);
@@ -109,6 +115,7 @@ export default function NavsPageClient() {
         onAddSite={handleAddSite}
         onAddCategory={handleAddCategory}
         onEditCategory={handleEditCategory}
+        onImport={handleImport}
       />
 
       <div
@@ -138,6 +145,12 @@ export default function NavsPageClient() {
         open={categoryModalOpen}
         onClose={() => setCategoryModalOpen(false)}
         category={editingCategory}
+      />
+
+      <NavsImportModal
+        open={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        existingCategories={navsData.categories}
       />
     </div>
   );

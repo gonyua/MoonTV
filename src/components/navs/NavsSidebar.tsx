@@ -24,6 +24,7 @@ import {
   Pencil,
   Plus,
   Trash2,
+  Upload,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useState } from 'react';
@@ -159,6 +160,7 @@ interface NavsSidebarProps {
   onAddSite: (categoryId?: string) => void;
   onAddCategory: () => void;
   onEditCategory: (category: NavCategory) => void;
+  onImport: () => void;
 }
 
 export default function NavsSidebar({
@@ -168,6 +170,7 @@ export default function NavsSidebar({
   onAddSite,
   onAddCategory,
   onEditCategory,
+  onImport,
 }: NavsSidebarProps) {
   const { siteName } = useSite();
   const [showAddMenu, setShowAddMenu] = useState(false);
@@ -243,6 +246,17 @@ export default function NavsSidebar({
                 >
                   <FolderPlus className='h-4 w-4' />
                   新增分类
+                </button>
+                <div className='border-t border-gray-200 dark:border-gray-700 my-1' />
+                <button
+                  className='w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2'
+                  onClick={() => {
+                    setShowAddMenu(false);
+                    onImport();
+                  }}
+                >
+                  <Upload className='h-4 w-4' />
+                  导入书签
                 </button>
               </div>
             </>
