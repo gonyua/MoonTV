@@ -51,14 +51,14 @@ export default function NavsSiteList({
     })
   );
 
-  const handleDeleteSite = useCallback((id: string) => {
+  const handleDeleteSite = useCallback(async (id: string) => {
     if (window.confirm('确定要删除该站点吗？')) {
-      deleteSite(id);
+      await deleteSite(id);
     }
   }, []);
 
   const handleDragEnd = useCallback(
-    (event: DragEndEvent, categoryId: string) => {
+    async (event: DragEndEvent, categoryId: string) => {
       const { active, over } = event;
       if (over && active.id !== over.id) {
         const categorySites = sites
@@ -67,7 +67,7 @@ export default function NavsSiteList({
         const oldIndex = categorySites.findIndex((s) => s.id === active.id);
         const newIndex = categorySites.findIndex((s) => s.id === over.id);
         const newOrder = arrayMove(categorySites, oldIndex, newIndex);
-        reorderSites(
+        await reorderSites(
           categoryId,
           newOrder.map((s) => s.id)
         );
@@ -124,7 +124,7 @@ export default function NavsSiteList({
 
       {categories.map((category) => {
         const categorySites = groupedSites[category.id] || [];
-        const categoryTags = getCategoryTags(category.id);
+        const categoryTags = getCategoryTags(sites, category.id);
 
         return (
           <section

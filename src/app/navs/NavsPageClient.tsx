@@ -29,11 +29,14 @@ export default function NavsPageClient() {
   const siteListRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const data = getNavsData();
-    setNavsData(data);
-    if (data.categories.length > 0 && !activeCategory) {
-      setActiveCategory(data.categories[0].id);
-    }
+    const loadData = async () => {
+      const data = await getNavsData();
+      setNavsData(data);
+      if (data.categories.length > 0 && !activeCategory) {
+        setActiveCategory(data.categories[0].id);
+      }
+    };
+    loadData();
 
     const unsubscribe = subscribeToNavsUpdates((newData) => {
       setNavsData(newData);

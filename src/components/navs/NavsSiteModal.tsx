@@ -80,7 +80,7 @@ export default function NavsSiteModal({
           .filter(Boolean);
 
         if (isEditing && site) {
-          updateSite(site.id, {
+          await updateSite(site.id, {
             name: name.trim(),
             url: url.trim(),
             description: description.trim() || undefined,
@@ -89,14 +89,14 @@ export default function NavsSiteModal({
             tags,
           });
         } else {
-          addSite(
+          await addSite({
             categoryId,
-            name.trim(),
-            url.trim(),
-            description.trim() || undefined,
-            icon.trim() || undefined,
-            tags
-          );
+            name: name.trim(),
+            url: url.trim(),
+            description: description.trim() || undefined,
+            icon: icon.trim() || undefined,
+            tags,
+          });
         }
         onClose();
       } finally {

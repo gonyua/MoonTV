@@ -184,21 +184,21 @@ export default function NavsSidebar({
   );
 
   const handleDragEnd = useCallback(
-    (event: DragEndEvent) => {
+    async (event: DragEndEvent) => {
       const { active, over } = event;
       if (over && active.id !== over.id) {
         const oldIndex = categories.findIndex((c) => c.id === active.id);
         const newIndex = categories.findIndex((c) => c.id === over.id);
         const newOrder = arrayMove(categories, oldIndex, newIndex);
-        reorderCategories(newOrder.map((c) => c.id));
+        await reorderCategories(newOrder.map((c) => c.id));
       }
     },
     [categories]
   );
 
-  const handleDeleteCategory = useCallback((id: string) => {
+  const handleDeleteCategory = useCallback(async (id: string) => {
     if (window.confirm('确定要删除该分类及其下所有站点吗？')) {
-      deleteCategory(id);
+      await deleteCategory(id);
     }
   }, []);
 

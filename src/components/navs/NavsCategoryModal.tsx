@@ -62,12 +62,15 @@ export default function NavsCategoryModal({
       setLoading(true);
       try {
         if (isEditing && category) {
-          updateCategory(category.id, {
+          await updateCategory(category.id, {
             name: name.trim(),
             icon: icon || undefined,
           });
         } else {
-          addCategory(name.trim(), icon || undefined);
+          await addCategory({
+            name: name.trim(),
+            icon: icon || undefined,
+          });
         }
         onClose();
       } finally {
