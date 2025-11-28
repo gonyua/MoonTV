@@ -2,9 +2,9 @@
 
 'use client';
 
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, Settings } from 'lucide-react';
 import Link from 'next/link';
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 
 // 客户端收藏 API
 import {
@@ -14,17 +14,21 @@ import {
   subscribeToDataUpdates,
 } from '@/lib/db.client';
 import { getDoubanCategories } from '@/lib/douban.client';
-import { DoubanItem } from '@/lib/types';
+import { getDoubanCookie, isDoubanLoggedIn } from '@/lib/douban-auth';
+import { DoubanItem, DoubanMineItem, DoubanMineResult } from '@/lib/types';
 
 import CapsuleSwitch from '@/components/CapsuleSwitch';
 import ContinueWatching from '@/components/ContinueWatching';
+import DoubanCookieModal from '@/components/DoubanCookieModal';
 import PageLayout from '@/components/PageLayout';
 import ScrollableRow from '@/components/ScrollableRow';
 import { useSite } from '@/components/SiteProvider';
 import VideoCard from '@/components/VideoCard';
 
+type TabType = 'home' | 'wish' | 'do' | 'collect' | 'favorites';
+
 function HomeClient() {
-  const [activeTab, setActiveTab] = useState<'home' | 'favorites'>('home');
+  const [activeTab, setActiveTab] = useState<TabType>('home');
   const [hotMovies, setHotMovies] = useState<DoubanItem[]>([]);
   const [hotTvShows, setHotTvShows] = useState<DoubanItem[]>([]);
   const [hotVarietyShows, setHotVarietyShows] = useState<DoubanItem[]>([]);
@@ -32,6 +36,22 @@ function HomeClient() {
   const { announcement } = useSite();
 
   const [showAnnouncement, setShowAnnouncement] = useState(false);
+
+  // 豆瓣个人数据状态
+  const [doubanMineData, setDoubanMineData] = useState<{
+    wish: DoubanMineItem[];
+    do: DoubanMineItem[];
+    collect: DoubanMineItem[];
+  }>({ wish: [], do: [], collect: [] });
+  const [doubanMineHasMore, setDoubanMineHasMore] = useState<{
+    wish: boolean;
+    do: boolean;
+    collect: boolean;
+  }>({ wish: true, do: true, collect: true });
+  const [doubanMineLoading, setDoubanMineLoading] = useState(false);
+  const [doubanMineLoadingMore, setDoubanMineLoadingMore] = useState(false);
+  const [showCookieModal, setShowCookieModal] = useState(false);
+  const [doubanMineError, setDoubanMineError] = useState<string | null>(null);
 
   // 检查公告弹窗状态
   useEffect(() => {
@@ -149,6 +169,94 @@ function HomeClient() {
     return unsubscribe;
   }, [activeTab]);
 
+  // 获取豆瓣个人数据
+  const fetchDoubanMine = useCallback(
+    async (status: 'wish' | 'do' | 'collect', loadMore = false) => {
+      const cookie = getDoubanCookie();
+      if (!cookie) {
+        setShowCookieModal(true);
+        return;
+      }
+
+      if (loadMore) {
+        setDoubanMineLoadingMore(true);
+      } else {
+        setDoubanMineLoading(true);
+      }
+      setDoubanMineError(null);
+
+      // 计算起始位置
+      const start = loadMore ? doubanMineData[status].length : 0;
+
+      try {
+        const response = await fetch(
+          `/api/douban/mine?status=${status}&start=${start}&cookie=${encodeURIComponent(
+            cookie
+          )}`
+        );
+        const data: DoubanMineResult = await response.json();
+
+        if (data.code === 401 || data.code === 403) {
+          setShowCookieModal(true);
+          setDoubanMineError(data.message);
+        } else if (data.code === 200) {
+          setDoubanMineData((prev) => ({
+            ...prev,
+            [status]: loadMore ? [...prev[status], ...data.list] : data.list,
+          }));
+          setDoubanMineHasMore((prev) => ({
+            ...prev,
+            [status]: data.hasMore,
+          }));
+        } else {
+          setDoubanMineError(data.message);
+        }
+      } catch (error) {
+        console.error('获取豆瓣数据失败:', error);
+        setDoubanMineError('获取数据失败，请稍后重试');
+      } finally {
+        setDoubanMineLoading(false);
+        setDoubanMineLoadingMore(false);
+      }
+    },
+    [doubanMineData]
+  );
+
+  // 当切换到豆瓣tab时加载数据
+  useEffect(() => {
+    if (activeTab === 'wish' || activeTab === 'do' || activeTab === 'collect') {
+      // 如果没有数据，则加载
+      if (doubanMineData[activeTab].length === 0) {
+        fetchDoubanMine(activeTab);
+      }
+    }
+  }, [activeTab, fetchDoubanMine]);
+
+  // Cookie保存后重新加载数据
+  const handleCookieSave = () => {
+    setShowCookieModal(false);
+    if (activeTab === 'wish' || activeTab === 'do' || activeTab === 'collect') {
+      // 重置数据和分页状态
+      setDoubanMineData((prev) => ({ ...prev, [activeTab]: [] }));
+      setDoubanMineHasMore((prev) => ({ ...prev, [activeTab]: true }));
+      fetchDoubanMine(activeTab);
+    }
+  };
+
+  // 刷新数据
+  const handleRefresh = (status: 'wish' | 'do' | 'collect') => {
+    setDoubanMineData((prev) => ({ ...prev, [status]: [] }));
+    setDoubanMineHasMore((prev) => ({ ...prev, [status]: true }));
+    fetchDoubanMine(status);
+  };
+
+  // 加载更多
+  const handleLoadMore = (status: 'wish' | 'do' | 'collect') => {
+    if (!doubanMineLoadingMore && doubanMineHasMore[status]) {
+      fetchDoubanMine(status, true);
+    }
+  };
+
   const handleCloseAnnouncement = (announcement: string) => {
     setShowAnnouncement(false);
     localStorage.setItem('hasSeenAnnouncement', announcement); // 记录已查看弹窗
@@ -158,15 +266,29 @@ function HomeClient() {
     <PageLayout>
       <div className='px-2 sm:px-10 py-4 sm:py-8 overflow-visible'>
         {/* 顶部 Tab 切换 */}
-        <div className='mb-8 flex justify-center'>
+        <div className='mb-8 flex justify-center items-center gap-2'>
           <CapsuleSwitch
             options={[
               { label: '首页', value: 'home' },
+              { label: '想看', value: 'wish' },
+              { label: '在看', value: 'do' },
+              { label: '看过', value: 'collect' },
               { label: '收藏夹', value: 'favorites' },
             ]}
             active={activeTab}
-            onChange={(value) => setActiveTab(value as 'home' | 'favorites')}
+            onChange={(value) => setActiveTab(value as TabType)}
           />
+          {(activeTab === 'wish' ||
+            activeTab === 'do' ||
+            activeTab === 'collect') && (
+            <button
+              onClick={() => setShowCookieModal(true)}
+              className='p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+              title='豆瓣账号设置'
+            >
+              <Settings className='w-5 h-5' />
+            </button>
+          )}
         </div>
 
         <div className='max-w-[95%] mx-auto'>
@@ -206,6 +328,103 @@ function HomeClient() {
                   </div>
                 )}
               </div>
+            </section>
+          ) : activeTab === 'wish' ||
+            activeTab === 'do' ||
+            activeTab === 'collect' ? (
+            // 豆瓣想看/在看/看过视图
+            <section className='mb-8'>
+              <div className='mb-4 flex items-center justify-between'>
+                <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
+                  {activeTab === 'wish'
+                    ? '想看'
+                    : activeTab === 'do'
+                    ? '在看'
+                    : '看过'}
+                </h2>
+                {isDoubanLoggedIn() && doubanMineData[activeTab].length > 0 && (
+                  <button
+                    className='text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                    onClick={() => handleRefresh(activeTab)}
+                  >
+                    刷新
+                  </button>
+                )}
+              </div>
+              {doubanMineLoading ? (
+                // 加载状态
+                <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-14 sm:gap-y-20 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8'>
+                  {Array.from({ length: 6 }).map((_, index) => (
+                    <div key={index} className='w-full'>
+                      <div className='relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-gray-200 animate-pulse dark:bg-gray-800'>
+                        <div className='absolute inset-0 bg-gray-300 dark:bg-gray-700'></div>
+                      </div>
+                      <div className='mt-2 h-4 bg-gray-200 rounded animate-pulse dark:bg-gray-800'></div>
+                    </div>
+                  ))}
+                </div>
+              ) : doubanMineError && doubanMineData[activeTab].length === 0 ? (
+                // 错误状态
+                <div className='text-center text-gray-500 py-8 dark:text-gray-400'>
+                  <p>{doubanMineError}</p>
+                  <button
+                    className='mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600'
+                    onClick={() => setShowCookieModal(true)}
+                  >
+                    设置豆瓣账号
+                  </button>
+                </div>
+              ) : (
+                // 数据展示
+                <>
+                  <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-14 sm:gap-y-20 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8'>
+                    {doubanMineData[activeTab].map((item) => (
+                      <div key={item.id} className='w-full'>
+                        <VideoCard
+                          from='douban'
+                          title={item.title}
+                          poster={item.poster}
+                          douban_id={item.id}
+                          year={item.year}
+                        />
+                      </div>
+                    ))}
+                    {doubanMineData[activeTab].length === 0 &&
+                      !doubanMineLoading && (
+                        <div className='col-span-full text-center text-gray-500 py-8 dark:text-gray-400'>
+                          {isDoubanLoggedIn() ? '暂无数据' : '请先登录豆瓣账号'}
+                          {!isDoubanLoggedIn() && (
+                            <button
+                              className='ml-2 text-blue-500 hover:text-blue-600'
+                              onClick={() => setShowCookieModal(true)}
+                            >
+                              去登录
+                            </button>
+                          )}
+                        </div>
+                      )}
+                  </div>
+                  {/* 加载更多按钮 */}
+                  {doubanMineData[activeTab].length > 0 &&
+                    doubanMineHasMore[activeTab] && (
+                      <div className='mt-8 text-center'>
+                        <button
+                          onClick={() => handleLoadMore(activeTab)}
+                          disabled={doubanMineLoadingMore}
+                          className='px-6 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg transition-colors disabled:opacity-50'
+                        >
+                          {doubanMineLoadingMore ? '加载中...' : '加载更多'}
+                        </button>
+                      </div>
+                    )}
+                  {doubanMineData[activeTab].length > 0 &&
+                    !doubanMineHasMore[activeTab] && (
+                      <div className='mt-8 text-center text-gray-400 dark:text-gray-500 text-sm'>
+                        已加载全部
+                      </div>
+                    )}
+                </>
+              )}
             </section>
           ) : (
             // 首页视图
@@ -392,6 +611,13 @@ function HomeClient() {
           </div>
         </div>
       )}
+
+      {/* 豆瓣Cookie设置弹窗 */}
+      <DoubanCookieModal
+        isOpen={showCookieModal}
+        onClose={() => setShowCookieModal(false)}
+        onSave={handleCookieSave}
+      />
     </PageLayout>
   );
 }

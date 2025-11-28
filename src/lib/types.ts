@@ -117,3 +117,22 @@ export interface SkipConfig {
   intro_time: number; // 片头时间（秒）
   outro_time: number; // 片尾时间（秒）
 }
+
+// 豆瓣个人影视数据结构 (想看/在看/看过)
+export interface DoubanMineItem {
+  id: string; // 豆瓣ID
+  title: string; // 标题
+  poster: string; // 封面图片
+  intro: string; // 简介(演员、年份等)
+  date: string; // 标记日期
+  playable: boolean; // 是否可播放
+  year: string; // 年份
+}
+
+export interface DoubanMineResult {
+  code: number;
+  message: string;
+  total: number; // 总数
+  list: DoubanMineItem[];
+  hasMore: boolean; // 是否有更多数据
+}
