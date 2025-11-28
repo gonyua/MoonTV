@@ -21,6 +21,7 @@ interface NavsImportModalProps {
   onClose: () => void;
 }
 
+type FileType = 'html' | 'json';
 type ImportMode = 'flatten' | 'simplify';
 type ImportStep = 'upload' | 'preview' | 'importing' | 'done';
 
@@ -30,14 +31,36 @@ interface ImportProgress {
   currentItem: string;
 }
 
+// JSON 导入格式
+interface JsonImportSite {
+  站点名称: string;
+  站点地址: string;
+  描述?: string;
+  图标?: string;
+  标签?: string[];
+}
+
+interface JsonImportData {
+  [categoryName: string]: JsonImportSite[];
+}
+
+// 统一的预览数据格式
+interface PreviewCategory {
+  name: string;
+  sites: Array<{ name: string; url: string }>;
+}
+
 export default function NavsImportModal({
   open,
   onClose,
 }: NavsImportModalProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<ImportStep>('upload');
-  const [parsedResult, setParsedResult] =
+  const [fileType, setFileType] = useState<FileType | null>(null);
+  const [parsedHtmlResult, setParsedHtmlResult] =
     useState<ParsedBookmarksResult | null>(null);
+  const [parsedJsonResult, setParsedJsonResult] =
+    useState<JsonImportData | null>(null);
   const [importMode, setImportMode] = useState<ImportMode>('simplify');
   const [progress, setProgress] = useState<ImportProgress>({
     current: 0,
@@ -52,9 +75,23 @@ export default function NavsImportModal({
       if (!file) return;
 
       const text = await file.text();
-      const result = parseBookmarksHtml(text);
-      setParsedResult(result);
-      setStep('preview');
+      const isJson = file.name.endsWith('.json');
+
+      if (isJson) {
+        try {
+          const jsonData = JSON.parse(text) as JsonImportData;
+          setParsedJsonResult(jsonData);
+          setFileType('json');
+          setStep('preview');
+        } catch {
+          alert('JSON 文件格式错误');
+        }
+      } else {
+        const result = parseBookmarksHtml(text);
+        setParsedHtmlResult(result);
+        setFileType('html');
+        setStep('preview');
+      }
     },
     []
   );
@@ -62,38 +99,81 @@ export default function NavsImportModal({
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     const file = e.dataTransfer.files?.[0];
-    if (!file || !file.name.endsWith('.html')) return;
+    if (!file) return;
+
+    const isJson = file.name.endsWith('.json');
+    const isHtml = file.name.endsWith('.html');
+    if (!isJson && !isHtml) return;
 
     const text = await file.text();
-    const result = parseBookmarksHtml(text);
-    setParsedResult(result);
-    setStep('preview');
+
+    if (isJson) {
+      try {
+        const jsonData = JSON.parse(text) as JsonImportData;
+        setParsedJsonResult(jsonData);
+        setFileType('json');
+        setStep('preview');
+      } catch {
+        alert('JSON 文件格式错误');
+      }
+    } else {
+      const result = parseBookmarksHtml(text);
+      setParsedHtmlResult(result);
+      setFileType('html');
+      setStep('preview');
+    }
   }, []);
 
-  const handleImport = useCallback(async () => {
-    if (!parsedResult) return;
-
-    setStep('importing');
-
-    // 根据模式处理文件夹
-    const foldersToImport =
-      importMode === 'simplify'
-        ? simplifyFolders(parsedResult.folders)
-        : flattenFolders(parsedResult.folders);
-
-    // 加上根目录书签
-    if (parsedResult.rootBookmarks.length > 0) {
-      foldersToImport.unshift({
-        name: '未分类',
-        bookmarks: parsedResult.rootBookmarks,
-      });
+  // 获取预览数据（统一格式）
+  const getPreviewData = useCallback((): PreviewCategory[] => {
+    if (fileType === 'json' && parsedJsonResult) {
+      return Object.entries(parsedJsonResult).map(([name, sites]) => ({
+        name,
+        sites: sites.map((s) => ({ name: s.站点名称, url: s.站点地址 })),
+      }));
     }
 
-    const totalBookmarks = foldersToImport.reduce(
-      (sum, f) => sum + f.bookmarks.length,
-      0
-    );
-    setProgress({ current: 0, total: totalBookmarks, currentItem: '' });
+    if (fileType === 'html' && parsedHtmlResult) {
+      const folders =
+        importMode === 'simplify'
+          ? simplifyFolders(parsedHtmlResult.folders)
+          : flattenFolders(parsedHtmlResult.folders);
+
+      const result: PreviewCategory[] = folders.map((f) => ({
+        name: f.name,
+        sites: f.bookmarks.map((b) => ({ name: b.title, url: b.url })),
+      }));
+
+      if (parsedHtmlResult.rootBookmarks.length > 0) {
+        result.unshift({
+          name: '未分类',
+          sites: parsedHtmlResult.rootBookmarks.map((b) => ({
+            name: b.title,
+            url: b.url,
+          })),
+        });
+      }
+
+      return result;
+    }
+
+    return [];
+  }, [fileType, parsedJsonResult, parsedHtmlResult, importMode]);
+
+  // 获取统计数据
+  const getStats = useCallback(() => {
+    const preview = getPreviewData();
+    const totalCategories = preview.length;
+    const totalSites = preview.reduce((sum, c) => sum + c.sites.length, 0);
+    return { totalCategories, totalSites };
+  }, [getPreviewData]);
+
+  const handleImport = useCallback(async () => {
+    setStep('importing');
+
+    const previewData = getPreviewData();
+    const totalSites = previewData.reduce((sum, c) => sum + c.sites.length, 0);
+    setProgress({ current: 0, total: totalSites, currentItem: '' });
 
     let importedCategories = 0;
     let importedSites = 0;
@@ -104,39 +184,48 @@ export default function NavsImportModal({
     const categoryMap = new Map<string, string>();
     existingCats.forEach((c) => categoryMap.set(c.name, c.id));
 
-    for (const folder of foldersToImport) {
+    for (const category of previewData) {
       // 查找或创建分类
-      let categoryId = categoryMap.get(folder.name);
+      let categoryId = categoryMap.get(category.name);
       if (!categoryId) {
-        const newCat = await addCategory({ name: folder.name });
+        const newCat = await addCategory({ name: category.name });
         if (newCat) {
           categoryId = newCat.id;
-          categoryMap.set(folder.name, categoryId);
+          categoryMap.set(category.name, categoryId);
           importedCategories++;
         }
       }
 
       if (!categoryId) continue;
 
-      // 导入书签
-      for (const bookmark of folder.bookmarks) {
+      // 获取 JSON 中的额外信息
+      const jsonSites =
+        fileType === 'json' && parsedJsonResult
+          ? parsedJsonResult[category.name]
+          : null;
+
+      // 导入站点
+      for (let i = 0; i < category.sites.length; i++) {
+        const site = category.sites[i];
         setProgress({
           current: processedCount,
-          total: totalBookmarks,
-          currentItem: bookmark.title,
+          total: totalSites,
+          currentItem: site.name,
         });
 
         // 获取图标
-        let icon = bookmark.icon;
-        if (!icon) {
-          icon = (await fetchFavicon(bookmark.url)) || undefined;
-        }
+        const icon = (await fetchFavicon(site.url)) || undefined;
+
+        // 获取 JSON 中的额外字段
+        const jsonSite = jsonSites?.[i];
 
         await addSite({
           categoryId,
-          name: bookmark.title,
-          url: bookmark.url,
-          icon,
+          name: site.name,
+          url: site.url,
+          icon: jsonSite?.图标 || icon,
+          description: jsonSite?.描述,
+          tags: jsonSite?.标签,
         });
 
         importedSites++;
@@ -146,24 +235,29 @@ export default function NavsImportModal({
 
     setImportStats({ categories: importedCategories, sites: importedSites });
     setStep('done');
-  }, [parsedResult, importMode]);
+  }, [getPreviewData, fileType, parsedJsonResult]);
 
   const handleClose = useCallback(() => {
     setStep('upload');
-    setParsedResult(null);
+    setFileType(null);
+    setParsedHtmlResult(null);
+    setParsedJsonResult(null);
     setProgress({ current: 0, total: 0, currentItem: '' });
     setImportStats({ categories: 0, sites: 0 });
     onClose();
   }, [onClose]);
 
-  const getPreviewData = useCallback(() => {
-    if (!parsedResult) return [];
-    return importMode === 'simplify'
-      ? simplifyFolders(parsedResult.folders)
-      : flattenFolders(parsedResult.folders);
-  }, [parsedResult, importMode]);
+  const handleReset = useCallback(() => {
+    setStep('upload');
+    setFileType(null);
+    setParsedHtmlResult(null);
+    setParsedJsonResult(null);
+  }, []);
 
   if (!open) return null;
+
+  const stats = getStats();
+  const previewData = getPreviewData();
 
   return (
     <div className='fixed inset-0 z-50 flex items-center justify-center'>
@@ -175,7 +269,7 @@ export default function NavsImportModal({
         {/* 标题 */}
         <div className='flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700'>
           <h2 className='text-lg font-semibold text-gray-900 dark:text-gray-100'>
-            导入浏览器书签
+            导入站点
           </h2>
           {step !== 'importing' && (
             <button
@@ -198,77 +292,92 @@ export default function NavsImportModal({
             >
               <Upload className='h-12 w-12 mx-auto text-gray-400 mb-4' />
               <p className='text-gray-600 dark:text-gray-400 mb-2'>
-                拖拽书签 HTML 文件到这里，或点击选择文件
+                拖拽文件到这里，或点击选择文件
               </p>
               <p className='text-sm text-gray-400 dark:text-gray-500'>
-                支持 Chrome、Firefox、Edge 导出的书签文件
+                支持浏览器书签 HTML 或 JSON 格式
               </p>
               <input
                 ref={fileInputRef}
                 type='file'
-                accept='.html'
+                accept='.html,.json'
                 className='hidden'
                 onChange={handleFileSelect}
               />
             </div>
           )}
 
-          {step === 'preview' && parsedResult && (
+          {step === 'preview' && (
             <div className='space-y-4'>
+              {/* 文件类型标识 */}
+              <div className='flex items-center gap-2'>
+                <span
+                  className={`px-2 py-0.5 text-xs rounded-full ${
+                    fileType === 'json'
+                      ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                      : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                  }`}
+                >
+                  {fileType === 'json' ? 'JSON 格式' : 'HTML 书签'}
+                </span>
+              </div>
+
               {/* 统计信息 */}
               <div className='bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4'>
                 <div className='flex justify-between text-sm'>
                   <span className='text-gray-600 dark:text-gray-400'>
-                    解析到的文件夹:
+                    分类数量:
                   </span>
                   <span className='font-medium text-gray-900 dark:text-gray-100'>
-                    {parsedResult.stats.totalFolders} 个
+                    {stats.totalCategories} 个
                   </span>
                 </div>
                 <div className='flex justify-between text-sm mt-1'>
                   <span className='text-gray-600 dark:text-gray-400'>
-                    解析到的书签:
+                    站点数量:
                   </span>
                   <span className='font-medium text-gray-900 dark:text-gray-100'>
-                    {parsedResult.stats.totalBookmarks} 个
+                    {stats.totalSites} 个
                   </span>
                 </div>
               </div>
 
-              {/* 导入模式选择 */}
-              <div>
-                <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
-                  文件夹处理方式
-                </label>
-                <div className='space-y-2'>
-                  <label className='flex items-center gap-2 cursor-pointer'>
-                    <input
-                      type='radio'
-                      name='importMode'
-                      value='simplify'
-                      checked={importMode === 'simplify'}
-                      onChange={() => setImportMode('simplify')}
-                      className='text-orange-500 focus:ring-orange-500'
-                    />
-                    <span className='text-sm text-gray-700 dark:text-gray-300'>
-                      只保留一级文件夹（子文件夹书签合并到父文件夹）
-                    </span>
+              {/* HTML 导入模式选择 */}
+              {fileType === 'html' && (
+                <div>
+                  <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
+                    文件夹处理方式
                   </label>
-                  <label className='flex items-center gap-2 cursor-pointer'>
-                    <input
-                      type='radio'
-                      name='importMode'
-                      value='flatten'
-                      checked={importMode === 'flatten'}
-                      onChange={() => setImportMode('flatten')}
-                      className='text-orange-500 focus:ring-orange-500'
-                    />
-                    <span className='text-sm text-gray-700 dark:text-gray-300'>
-                      展开所有层级（子文件夹名称如：父文件夹/子文件夹）
-                    </span>
-                  </label>
+                  <div className='space-y-2'>
+                    <label className='flex items-center gap-2 cursor-pointer'>
+                      <input
+                        type='radio'
+                        name='importMode'
+                        value='simplify'
+                        checked={importMode === 'simplify'}
+                        onChange={() => setImportMode('simplify')}
+                        className='text-orange-500 focus:ring-orange-500'
+                      />
+                      <span className='text-sm text-gray-700 dark:text-gray-300'>
+                        只保留一级文件夹（子文件夹书签合并到父文件夹）
+                      </span>
+                    </label>
+                    <label className='flex items-center gap-2 cursor-pointer'>
+                      <input
+                        type='radio'
+                        name='importMode'
+                        value='flatten'
+                        checked={importMode === 'flatten'}
+                        onChange={() => setImportMode('flatten')}
+                        className='text-orange-500 focus:ring-orange-500'
+                      />
+                      <span className='text-sm text-gray-700 dark:text-gray-300'>
+                        展开所有层级（子文件夹名称如：父文件夹/子文件夹）
+                      </span>
+                    </label>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* 预览列表 */}
               <div>
@@ -276,29 +385,19 @@ export default function NavsImportModal({
                   将导入以下分类
                 </label>
                 <div className='max-h-48 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg'>
-                  {getPreviewData().map((folder, index) => (
+                  {previewData.map((category, index) => (
                     <div
                       key={index}
                       className='flex justify-between px-3 py-2 border-b border-gray-100 dark:border-gray-700 last:border-b-0'
                     >
                       <span className='text-sm text-gray-700 dark:text-gray-300 truncate'>
-                        {folder.name}
+                        {category.name}
                       </span>
                       <span className='text-sm text-gray-400 flex-shrink-0 ml-2'>
-                        {folder.bookmarks.length} 个
+                        {category.sites.length} 个
                       </span>
                     </div>
                   ))}
-                  {parsedResult.rootBookmarks.length > 0 && (
-                    <div className='flex justify-between px-3 py-2'>
-                      <span className='text-sm text-gray-500 dark:text-gray-400'>
-                        未分类
-                      </span>
-                      <span className='text-sm text-gray-400'>
-                        {parsedResult.rootBookmarks.length} 个
-                      </span>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
@@ -308,7 +407,7 @@ export default function NavsImportModal({
             <div className='text-center py-8'>
               <Loader2 className='h-12 w-12 mx-auto text-orange-500 animate-spin mb-4' />
               <p className='text-gray-600 dark:text-gray-400 mb-2'>
-                正在导入书签...
+                正在导入...
               </p>
               <p className='text-sm text-gray-400 dark:text-gray-500 truncate px-4'>
                 {progress.currentItem}
@@ -317,7 +416,11 @@ export default function NavsImportModal({
                 <div
                   className='bg-orange-500 h-full transition-all duration-300'
                   style={{
-                    width: `${(progress.current / progress.total) * 100}%`,
+                    width: `${
+                      progress.total > 0
+                        ? (progress.current / progress.total) * 100
+                        : 0
+                    }%`,
                   }}
                 />
               </div>
@@ -354,10 +457,7 @@ export default function NavsImportModal({
             <>
               <button
                 className='px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors'
-                onClick={() => {
-                  setStep('upload');
-                  setParsedResult(null);
-                }}
+                onClick={handleReset}
               >
                 重新选择
               </button>

@@ -150,7 +150,6 @@ export default function NavsPageClient() {
       <NavsImportModal
         open={importModalOpen}
         onClose={() => setImportModalOpen(false)}
-        existingCategories={navsData.categories}
       />
     </div>
   );
