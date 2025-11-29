@@ -40,6 +40,8 @@ interface EpisodeSelectorProps {
   sourceSearchError?: string | null;
   /** 预计算的测速结果，避免重复测速 */
   precomputedVideoInfo?: Map<string, VideoInfo>;
+  /** 优选检测是否完成 */
+  isPreferCompleted?: boolean;
 }
 
 /**
@@ -58,6 +60,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   sourceSearchLoading = false,
   sourceSearchError = null,
   precomputedVideoInfo,
+  isPreferCompleted = false,
 }) => {
   const router = useRouter();
   const pageCount = Math.ceil(totalEpisodes / episodesPerPage);
@@ -446,12 +449,10 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
             !sourceSearchError &&
             availableSources.length === 0 && (
               <div className='flex items-center justify-center py-8'>
-                <div className='text-center'>
-                  <div className='text-gray-400 text-2xl mb-2'>📺</div>
-                  <p className='text-sm text-gray-600 dark:text-gray-300'>
-                    暂无可用的换源
-                  </p>
-                </div>
+                <div className='animate-spin rounded-full h-8 w-8 border-b-2 border-green-500'></div>
+                <span className='ml-2 text-sm text-gray-600 dark:text-gray-300'>
+                  加载中...
+                </span>
               </div>
             )}
 
@@ -525,11 +526,15 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
 
                               if (videoInfo && videoInfo.quality !== '未知') {
                                 if (videoInfo.hasError) {
-                                  return (
-                                    <div className='bg-gray-500/10 dark:bg-gray-400/20 text-red-600 dark:text-red-400 px-1.5 py-0 rounded text-xs flex-shrink-0 min-w-[50px] text-center'>
-                                      检测失败
-                                    </div>
-                                  );
+                                  // 只有优选完成后才显示检测失败
+                                  if (isPreferCompleted) {
+                                    return (
+                                      <div className='bg-gray-500/10 dark:bg-gray-400/20 text-red-600 dark:text-red-400 px-1.5 py-0 rounded text-xs flex-shrink-0 min-w-[50px] text-center'>
+                                        检测失败
+                                      </div>
+                                    );
+                                  }
+                                  return null;
                                 } else {
                                   // 根据分辨率设置不同颜色：2K、4K为紫色，1080p、720p为绿色，其他为黄色
                                   const isUltraHigh = ['4K', '2K'].includes(
@@ -587,14 +592,16 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                                       </div>
                                     </div>
                                   );
-                                } else {
+                                } else if (isPreferCompleted) {
+                                  // 只有优选完成后才显示无测速数据
                                   return (
                                     <div className='text-red-500/90 dark:text-red-400 font-medium text-xs'>
                                       无测速数据
                                     </div>
-                                  ); // 占位div
+                                  );
                                 }
                               }
+                              return null;
                             })()}
                           </div>
                         </div>

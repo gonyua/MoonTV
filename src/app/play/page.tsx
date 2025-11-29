@@ -177,6 +177,9 @@ function PlayPageClient() {
     Map<string, { quality: string; loadSpeed: string; pingTime: number }>
   >(new Map());
 
+  // 标识优选检测是否完成
+  const [isPreferCompleted, setIsPreferCompleted] = useState(false);
+
   // 折叠状态（仅在 lg 及以上屏幕有效）
   const [isEpisodeSelectorCollapsed, setIsEpisodeSelectorCollapsed] =
     useState(false);
@@ -729,13 +732,8 @@ function PlayPageClient() {
       newUrl.searchParams.delete('prefer');
       window.history.replaceState({}, '', newUrl.toString());
 
-      setLoadingStage('ready');
-      setLoadingMessage('✨ 准备就绪，即将开始播放...');
-
-      // 短暂延迟让用户看到完成状态
-      setTimeout(() => {
-        setLoading(false);
-      }, 1000);
+      setIsPreferCompleted(true);
+      setLoading(false);
     };
 
     initAll();
@@ -1765,7 +1763,7 @@ function PlayPageClient() {
                             ? loadingMessage
                             : videoLoadingStage === 'sourceChanging'
                             ? '🔄 切换播放源...'
-                            : '🔄 视频加载中...'}
+                            : '🔄 正在加载视频...'}
                         </p>
                       </div>
                     </div>
@@ -1794,6 +1792,7 @@ function PlayPageClient() {
                 sourceSearchLoading={sourceSearchLoading}
                 sourceSearchError={sourceSearchError}
                 precomputedVideoInfo={precomputedVideoInfo}
+                isPreferCompleted={isPreferCompleted}
               />
             </div>
           </div>
@@ -1820,7 +1819,7 @@ function PlayPageClient() {
 
               {/* 关键信息行 */}
               <div className='flex flex-wrap items-center gap-3 text-base mb-4 opacity-80 flex-shrink-0'>
-                {loading ? (
+                {!detail ? (
                   <>
                     <span className='h-5 w-16 bg-gray-200 dark:bg-gray-700 rounded animate-pulse'></span>
                     <span className='h-5 w-12 bg-gray-200 dark:bg-gray-700 rounded animate-pulse'></span>
@@ -1846,7 +1845,7 @@ function PlayPageClient() {
                 )}
               </div>
               {/* 剧情简介 */}
-              {loading ? (
+              {!detail ? (
                 <div className='space-y-2'>
                   <div className='h-4 w-full bg-gray-200 dark:bg-gray-700 rounded animate-pulse'></div>
                   <div className='h-4 w-11/12 bg-gray-200 dark:bg-gray-700 rounded animate-pulse'></div>
@@ -1875,7 +1874,7 @@ function PlayPageClient() {
                     alt={videoTitle}
                     className='w-full h-full object-cover'
                   />
-                ) : loading ? (
+                ) : !detail ? (
                   <div className='w-full h-full bg-gray-200 dark:bg-gray-700 animate-pulse'></div>
                 ) : (
                   <span className='text-gray-600 dark:text-gray-400'>
