@@ -36,7 +36,23 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
       (a, b) => b.save_time - a.save_time
     );
 
-    setPlayRecords(sortedRecords);
+    // 按 title + year 去重，只保留最新的记录（避免同一部电影因不同源重复显示）
+    const seen = new Set<string>();
+    const deduplicatedRecords = sortedRecords.filter((record) => {
+      // 标准化处理：去除空格、转小写，避免因格式差异导致去重失败
+      const normalizedTitle = (record.title || '')
+        .replace(/\s+/g, '')
+        .toLowerCase();
+      const normalizedYear = (record.year || '').trim();
+      const dedupeKey = `${normalizedTitle}+${normalizedYear}`;
+      if (seen.has(dedupeKey)) {
+        return false;
+      }
+      seen.add(dedupeKey);
+      return true;
+    });
+
+    setPlayRecords(deduplicatedRecords);
   };
 
   useEffect(() => {

@@ -1580,98 +1580,6 @@ function PlayPageClient() {
     };
   }, []);
 
-  if (loading) {
-    return (
-      <PageLayout activePath='/play'>
-        <div className='flex items-center justify-center min-h-screen bg-transparent'>
-          <div className='text-center max-w-md mx-auto px-6'>
-            {/* 动画影院图标 */}
-            <div className='relative mb-8'>
-              <div className='relative mx-auto w-24 h-24 bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl shadow-2xl flex items-center justify-center transform hover:scale-105 transition-transform duration-300'>
-                <div className='text-white text-4xl'>
-                  {loadingStage === 'searching' && '🔍'}
-                  {loadingStage === 'preferring' && '⚡'}
-                  {loadingStage === 'fetching' && '🎬'}
-                  {loadingStage === 'ready' && '✨'}
-                </div>
-                {/* 旋转光环 */}
-                <div className='absolute -inset-2 bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl opacity-20 animate-spin'></div>
-              </div>
-
-              {/* 浮动粒子效果 */}
-              <div className='absolute top-0 left-0 w-full h-full pointer-events-none'>
-                <div className='absolute top-2 left-2 w-2 h-2 bg-green-400 rounded-full animate-bounce'></div>
-                <div
-                  className='absolute top-4 right-4 w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce'
-                  style={{ animationDelay: '0.5s' }}
-                ></div>
-                <div
-                  className='absolute bottom-3 left-6 w-1 h-1 bg-lime-400 rounded-full animate-bounce'
-                  style={{ animationDelay: '1s' }}
-                ></div>
-              </div>
-            </div>
-
-            {/* 进度指示器 */}
-            <div className='mb-6 w-80 mx-auto'>
-              <div className='flex justify-center space-x-2 mb-4'>
-                <div
-                  className={`w-3 h-3 rounded-full transition-all duration-500 ${
-                    loadingStage === 'searching' || loadingStage === 'fetching'
-                      ? 'bg-green-500 scale-125'
-                      : loadingStage === 'preferring' ||
-                        loadingStage === 'ready'
-                      ? 'bg-green-500'
-                      : 'bg-gray-300'
-                  }`}
-                ></div>
-                <div
-                  className={`w-3 h-3 rounded-full transition-all duration-500 ${
-                    loadingStage === 'preferring'
-                      ? 'bg-green-500 scale-125'
-                      : loadingStage === 'ready'
-                      ? 'bg-green-500'
-                      : 'bg-gray-300'
-                  }`}
-                ></div>
-                <div
-                  className={`w-3 h-3 rounded-full transition-all duration-500 ${
-                    loadingStage === 'ready'
-                      ? 'bg-green-500 scale-125'
-                      : 'bg-gray-300'
-                  }`}
-                ></div>
-              </div>
-
-              {/* 进度条 */}
-              <div className='w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden'>
-                <div
-                  className='h-full bg-gradient-to-r from-green-500 to-emerald-600 rounded-full transition-all duration-1000 ease-out'
-                  style={{
-                    width:
-                      loadingStage === 'searching' ||
-                      loadingStage === 'fetching'
-                        ? '33%'
-                        : loadingStage === 'preferring'
-                        ? '66%'
-                        : '100%',
-                  }}
-                ></div>
-              </div>
-            </div>
-
-            {/* 加载消息 */}
-            <div className='space-y-2'>
-              <p className='text-xl font-semibold text-gray-800 dark:text-gray-200 animate-pulse'>
-                {loadingMessage}
-              </p>
-            </div>
-          </div>
-        </div>
-      </PageLayout>
-    );
-  }
-
   if (error) {
     return (
       <PageLayout activePath='/play'>
@@ -1816,14 +1724,22 @@ function PlayPageClient() {
                   className='bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
                 ></div>
 
-                {/* 换源加载蒙层 */}
-                {isVideoLoading && (
+                {/* 加载蒙层 - 初始加载或换源时显示 */}
+                {(loading || isVideoLoading) && (
                   <div className='absolute inset-0 bg-black/85 backdrop-blur-sm rounded-xl flex items-center justify-center z-[500] transition-all duration-300'>
                     <div className='text-center max-w-md mx-auto px-6'>
                       {/* 动画影院图标 */}
                       <div className='relative mb-8'>
                         <div className='relative mx-auto w-24 h-24 bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl shadow-2xl flex items-center justify-center transform hover:scale-105 transition-transform duration-300'>
-                          <div className='text-white text-4xl'>🎬</div>
+                          <div className='text-white text-4xl'>
+                            {loading
+                              ? loadingStage === 'searching'
+                                ? '🔍'
+                                : loadingStage === 'preferring'
+                                ? '⚡'
+                                : '🎬'
+                              : '🎬'}
+                          </div>
                           {/* 旋转光环 */}
                           <div className='absolute -inset-2 bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl opacity-20 animate-spin'></div>
                         </div>
@@ -1842,10 +1758,12 @@ function PlayPageClient() {
                         </div>
                       </div>
 
-                      {/* 换源消息 */}
+                      {/* 加载消息 */}
                       <div className='space-y-2'>
                         <p className='text-xl font-semibold text-white animate-pulse'>
-                          {videoLoadingStage === 'sourceChanging'
+                          {loading
+                            ? loadingMessage
+                            : videoLoadingStage === 'sourceChanging'
                             ? '🔄 切换播放源...'
                             : '🔄 视频加载中...'}
                         </p>
@@ -1902,29 +1820,47 @@ function PlayPageClient() {
 
               {/* 关键信息行 */}
               <div className='flex flex-wrap items-center gap-3 text-base mb-4 opacity-80 flex-shrink-0'>
-                {detail?.class && (
-                  <span className='text-green-600 font-semibold'>
-                    {detail.class}
-                  </span>
+                {loading ? (
+                  <>
+                    <span className='h-5 w-16 bg-gray-200 dark:bg-gray-700 rounded animate-pulse'></span>
+                    <span className='h-5 w-12 bg-gray-200 dark:bg-gray-700 rounded animate-pulse'></span>
+                    <span className='h-5 w-20 bg-gray-200 dark:bg-gray-700 rounded animate-pulse'></span>
+                  </>
+                ) : (
+                  <>
+                    {detail?.class && (
+                      <span className='text-green-600 font-semibold'>
+                        {detail.class}
+                      </span>
+                    )}
+                    {(detail?.year || videoYear) && (
+                      <span>{detail?.year || videoYear}</span>
+                    )}
+                    {detail?.source_name && (
+                      <span className='border border-gray-500/60 px-2 py-[1px] rounded'>
+                        {detail.source_name}
+                      </span>
+                    )}
+                    {detail?.type_name && <span>{detail.type_name}</span>}
+                  </>
                 )}
-                {(detail?.year || videoYear) && (
-                  <span>{detail?.year || videoYear}</span>
-                )}
-                {detail?.source_name && (
-                  <span className='border border-gray-500/60 px-2 py-[1px] rounded'>
-                    {detail.source_name}
-                  </span>
-                )}
-                {detail?.type_name && <span>{detail.type_name}</span>}
               </div>
               {/* 剧情简介 */}
-              {detail?.desc && (
-                <div
-                  className='mt-0 text-base leading-relaxed opacity-90 overflow-y-auto pr-2 flex-1 min-h-0 scrollbar-hide'
-                  style={{ whiteSpace: 'pre-line' }}
-                >
-                  {detail.desc}
+              {loading ? (
+                <div className='space-y-2'>
+                  <div className='h-4 w-full bg-gray-200 dark:bg-gray-700 rounded animate-pulse'></div>
+                  <div className='h-4 w-11/12 bg-gray-200 dark:bg-gray-700 rounded animate-pulse'></div>
+                  <div className='h-4 w-4/5 bg-gray-200 dark:bg-gray-700 rounded animate-pulse'></div>
                 </div>
+              ) : (
+                detail?.desc && (
+                  <div
+                    className='mt-0 text-base leading-relaxed opacity-90 overflow-y-auto pr-2 flex-1 min-h-0 scrollbar-hide'
+                    style={{ whiteSpace: 'pre-line' }}
+                  >
+                    {detail.desc}
+                  </div>
+                )
               )}
             </div>
           </div>
@@ -1939,6 +1875,8 @@ function PlayPageClient() {
                     alt={videoTitle}
                     className='w-full h-full object-cover'
                   />
+                ) : loading ? (
+                  <div className='w-full h-full bg-gray-200 dark:bg-gray-700 animate-pulse'></div>
                 ) : (
                   <span className='text-gray-600 dark:text-gray-400'>
                     封面图片
