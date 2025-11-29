@@ -38,17 +38,20 @@ export function parseDoubanMineHtml(html: string): DoubanMineResult {
 function parseAllItems(html: string): DoubanMineItem[] {
   const items: DoubanMineItem[] = [];
 
-  // 匹配每个影片项
+  // 匹配每个影片项，同时提取显示标题（中文译名）
   const pattern =
-    /<div class="item comment-item"[^>]*data-cid="[^"]*"[^>]*>[\s\S]*?<a title="([^"]*)" href="https:\/\/movie\.douban\.com\/subject\/(\d+)\/"[^>]*>\s*<img[^>]*src="([^"]+)"[\s\S]*?<li class="intro">([^<]*)<\/li>[\s\S]*?<span class="date">([^<]+)<\/span>/g;
+    /<div class="item comment-item"[^>]*data-cid="[^"]*"[^>]*>[\s\S]*?<a title="([^"]*)" href="https:\/\/movie\.douban\.com\/subject\/(\d+)\/"[^>]*>\s*<img[^>]*src="([^"]+)"[\s\S]*?<li class="title">\s*<a[^>]*>([^<]*)<\/a>[\s\S]*?<li class="intro">([^<]*)<\/li>[\s\S]*?<span class="date">([^<]+)<\/span>/g;
 
   let match;
   while ((match = pattern.exec(html)) !== null) {
-    const title = decodeHtmlEntities(match[1]);
+    const originalTitle = decodeHtmlEntities(match[1]);
     const id = match[2];
     const poster = match[3];
-    const intro = decodeHtmlEntities(match[4].trim());
-    const date = match[5].trim();
+    const displayTitle = decodeHtmlEntities(match[4].trim());
+    const intro = decodeHtmlEntities(match[5].trim());
+    const date = match[6].trim();
+    // 优先使用显示标题（通常是中文），如果为空则使用原标题
+    const title = displayTitle || originalTitle;
 
     // 检查是否可播放
     const itemStart = match.index;

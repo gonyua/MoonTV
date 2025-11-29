@@ -699,6 +699,16 @@ function PlayPageClient() {
         }
       }
 
+      // 搜索完成后，先用第一个源显示简介信息（不显示源名称）
+      if (sourcesInfo.length > 0) {
+        const firstSource = sourcesInfo[0];
+        setDetail({
+          ...firstSource,
+          source_name: '', // 暂时不显示源名称
+        });
+        setVideoCover(firstSource.poster);
+      }
+
       // 未指定源和 id 或需要优选，且开启优选开关
       if (
         (!currentSource || !currentId || needPreferRef.current) &&
@@ -1762,8 +1772,8 @@ function PlayPageClient() {
                           {loading
                             ? loadingMessage
                             : videoLoadingStage === 'sourceChanging'
-                            ? '🔄 切换播放源...'
-                            : '🔄 正在加载视频...'}
+                            ? '🎬 切换播放源...'
+                            : '🎬 正在加载视频...'}
                         </p>
                       </div>
                     </div>
