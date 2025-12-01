@@ -266,7 +266,7 @@ function HomeClient() {
     <PageLayout>
       <div className='px-2 sm:px-10 py-4 sm:py-8 overflow-visible'>
         {/* 顶部 Tab 切换 */}
-        <div className='mb-8 flex justify-center items-center gap-2'>
+        <div className='mb-4 flex justify-center items-center gap-2'>
           <CapsuleSwitch
             options={[
               { label: '首页', value: 'home' },
@@ -294,7 +294,7 @@ function HomeClient() {
         <div className='max-w-[95%] mx-auto'>
           {activeTab === 'favorites' ? (
             // 收藏夹视图
-            <section className='mb-8'>
+            <section className='mb-4'>
               <div className='mb-4 flex items-center justify-between'>
                 <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
                   我的收藏
@@ -311,7 +311,7 @@ function HomeClient() {
                   </button>
                 )}
               </div>
-              <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-14 sm:gap-y-20 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8'>
+              <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-7 sm:gap-y-10 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8'>
                 {favoriteItems.map((item) => (
                   <div key={item.id + item.source} className='w-full'>
                     <VideoCard
@@ -333,7 +333,7 @@ function HomeClient() {
             activeTab === 'do' ||
             activeTab === 'collect' ? (
             // 豆瓣想看/在看/看过视图
-            <section className='mb-8'>
+            <section className='mb-4'>
               <div className='mb-4 flex items-center justify-between'>
                 <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
                   {activeTab === 'wish'
@@ -353,7 +353,7 @@ function HomeClient() {
               </div>
               {doubanMineLoading ? (
                 // 加载状态
-                <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-14 sm:gap-y-20 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8'>
+                <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-7 sm:gap-y-10 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8'>
                   {Array.from({ length: 6 }).map((_, index) => (
                     <div key={index} className='w-full'>
                       <div className='relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-gray-200 animate-pulse dark:bg-gray-800'>
@@ -377,7 +377,7 @@ function HomeClient() {
               ) : (
                 // 数据展示
                 <>
-                  <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-14 sm:gap-y-20 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8'>
+                  <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-7 sm:gap-y-10 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8'>
                     {doubanMineData[activeTab].map((item) => (
                       <div key={item.id} className='w-full'>
                         <VideoCard
@@ -433,7 +433,7 @@ function HomeClient() {
               <ContinueWatching />
 
               {/* 热门电影 */}
-              <section className='mb-8'>
+              <section className='mb-4'>
                 <div className='mb-4 flex items-center justify-between'>
                   <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
                     热门电影
@@ -481,7 +481,7 @@ function HomeClient() {
               </section>
 
               {/* 热门剧集 */}
-              <section className='mb-8'>
+              <section className='mb-4'>
                 <div className='mb-4 flex items-center justify-between'>
                   <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
                     热门剧集
@@ -528,7 +528,7 @@ function HomeClient() {
               </section>
 
               {/* 热门综艺 */}
-              <section className='mb-8'>
+              <section className='mb-4'>
                 <div className='mb-4 flex items-center justify-between'>
                   <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
                     热门综艺
