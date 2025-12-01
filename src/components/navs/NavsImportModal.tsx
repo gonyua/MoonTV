@@ -315,7 +315,7 @@ export default function NavsImportModal({
                   className={`px-2 py-0.5 text-xs rounded-full ${
                     fileType === 'json'
                       ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                      : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                      : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
                   }`}
                 >
                   {fileType === 'json' ? 'JSON 格式' : 'HTML 书签'}
@@ -432,7 +432,7 @@ export default function NavsImportModal({
 
           {step === 'done' && (
             <div className='text-center py-8'>
-              <CheckCircle className='h-12 w-12 mx-auto text-green-500 mb-4' />
+              <CheckCircle className='h-12 w-12 mx-auto text-orange-500 mb-4' />
               <p className='text-lg font-medium text-gray-900 dark:text-gray-100 mb-2'>
                 导入完成！
               </p>

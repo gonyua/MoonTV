@@ -96,7 +96,7 @@ export default function NewNotePageClient() {
     <div className='flex items-center gap-3'>
       <Link
         href='/notes'
-        className='inline-flex items-center gap-2 rounded-full border border-gray-200 px-3 py-1 text-base text-gray-600 hover:border-green-200 hover:text-green-600 transition-colors dark:border-gray-700 dark:text-gray-300 dark:hover:border-green-500/50 dark:hover:text-green-400'
+        className='inline-flex items-center gap-2 rounded-full border border-gray-200 px-3 py-1 text-base text-gray-600 hover:border-orange-200 hover:text-orange-600 transition-colors dark:border-gray-700 dark:text-gray-300 dark:hover:border-orange-500/50 dark:hover:text-orange-400'
       >
         <ArrowLeft className='w-4 h-4' />
         返回列表
@@ -120,7 +120,7 @@ export default function NewNotePageClient() {
             </label>
             <input
               type='text'
-              className='w-full rounded-2xl border border-gray-200 bg-white/80 px-4 py-3 text-base text-gray-900 focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-200 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-100'
+              className='w-full rounded-2xl border border-gray-200 bg-white/80 px-4 py-3 text-base text-gray-900 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-200 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-100'
               placeholder='例如：灵感记录...'
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -132,7 +132,7 @@ export default function NewNotePageClient() {
               正文（支持 Markdown）
             </label>
             <textarea
-              className='w-full min-h-[360px] rounded-2xl border border-gray-200 bg-white/80 px-4 py-3 text-base text-gray-900 focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-200 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-100'
+              className='w-full min-h-[360px] rounded-2xl border border-gray-200 bg-white/80 px-4 py-3 text-base text-gray-900 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-200 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-100'
               placeholder='记录想法，支持 *强调*、`代码`、列表等语法。'
               value={content}
               onChange={(e) => setContent(e.target.value)}
@@ -146,7 +146,7 @@ export default function NewNotePageClient() {
           <button
             type='submit'
             disabled={isSaving}
-            className='inline-flex items-center justify-center gap-2 rounded-2xl bg-green-600 px-5 py-3 text-white font-medium shadow-lg shadow-green-500/30 hover:bg-green-700 transition-colors disabled:opacity-60'
+            className='inline-flex items-center justify-center gap-2 rounded-2xl bg-orange-600 px-5 py-3 text-white font-medium shadow-lg shadow-orange-500/30 hover:bg-orange-700 transition-colors disabled:opacity-60'
           >
             {isSaving ? (
               <>

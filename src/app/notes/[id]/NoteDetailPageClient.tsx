@@ -92,7 +92,7 @@ export default function NoteDetailPageClient({ noteId }: NoteDetailProps) {
             {...props}
             target='_blank'
             rel='noopener noreferrer'
-            className='text-green-600 hover:underline break-all'
+            className='text-orange-600 hover:underline break-all'
           >
             {children}
           </a>
@@ -217,7 +217,7 @@ export default function NoteDetailPageClient({ noteId }: NoteDetailProps) {
     <div className='flex flex-wrap items-center gap-3'>
       <Link
         href='/notes'
-        className='inline-flex items-center gap-2 rounded-full border border-gray-200 px-3 py-1 text-base text-gray-600 hover:border-green-200 hover:text-green-600 transition-colors dark:border-gray-700 dark:text-gray-300 dark:hover:border-green-500/50 dark:hover:text-green-400'
+        className='inline-flex items-center gap-2 rounded-full border border-gray-200 px-3 py-1 text-base text-gray-600 hover:border-orange-200 hover:text-orange-600 transition-colors dark:border-gray-700 dark:text-gray-300 dark:hover:border-orange-500/50 dark:hover:text-orange-400'
       >
         <ArrowLeft className='w-4 h-4' />
         返回列表
@@ -225,7 +225,7 @@ export default function NoteDetailPageClient({ noteId }: NoteDetailProps) {
       <button
         type='button'
         onClick={() => setIsEditing((prev) => !prev)}
-        className='inline-flex items-center gap-2 rounded-full border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:border-green-200 hover:text-green-600 transition-colors dark:border-gray-600 dark:text-gray-300 dark:hover:border-green-500/50 dark:hover:text-green-400'
+        className='inline-flex items-center gap-2 rounded-full border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:border-orange-200 hover:text-orange-600 transition-colors dark:border-gray-600 dark:text-gray-300 dark:hover:border-orange-500/50 dark:hover:text-orange-400'
       >
         <Edit3 className='w-4 h-4' />
         {isEditing ? '取消编辑' : '编辑'}
@@ -234,7 +234,7 @@ export default function NoteDetailPageClient({ noteId }: NoteDetailProps) {
   ) : (
     <Link
       href='/notes'
-      className='inline-flex items-center gap-2 rounded-full border border-gray-200 px-3 py-1 text-base text-gray-600 hover:border-green-200 hover:text-green-600 transition-colors dark:border-gray-700 dark:text-gray-300 dark:hover:border-green-500/50 dark:hover:text-green-400'
+      className='inline-flex items-center gap-2 rounded-full border border-gray-200 px-3 py-1 text-base text-gray-600 hover:border-orange-200 hover:text-orange-600 transition-colors dark:border-gray-700 dark:text-gray-300 dark:hover:border-orange-500/50 dark:hover:text-orange-400'
     >
       <ArrowLeft className='w-4 h-4' />
       返回列表
@@ -306,7 +306,7 @@ export default function NoteDetailPageClient({ noteId }: NoteDetailProps) {
                 </label>
                 <input
                   type='text'
-                  className='w-full rounded-2xl border border-gray-200 bg-white/80 px-4 py-3 text-base text-gray-900 focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-200 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-100'
+                  className='w-full rounded-2xl border border-gray-200 bg-white/80 px-4 py-3 text-base text-gray-900 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-200 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-100'
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                 />
@@ -316,7 +316,7 @@ export default function NoteDetailPageClient({ noteId }: NoteDetailProps) {
                   正文（支持Markdown）
                 </label>
                 <textarea
-                  className='w-full min-h-[280px] rounded-2xl border border-gray-200 bg-white/80 px-4 py-3 text-base text-gray-900 focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-200 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-100'
+                  className='w-full min-h-[280px] rounded-2xl border border-gray-200 bg-white/80 px-4 py-3 text-base text-gray-900 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-200 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-100'
                   placeholder='输入视频链接 https://...mp4 即可直接预览播放'
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
@@ -324,7 +324,7 @@ export default function NoteDetailPageClient({ noteId }: NoteDetailProps) {
               </div>
               <div className='flex items-center justify-between gap-3 flex-wrap'>
                 {status && (
-                  <span className='text-sm text-green-600 dark:text-green-400'>
+                  <span className='text-sm text-orange-600 dark:text-orange-400'>
                     {status}
                   </span>
                 )}
@@ -332,7 +332,7 @@ export default function NoteDetailPageClient({ noteId }: NoteDetailProps) {
                   type='button'
                   onClick={handleSave}
                   disabled={isSaving}
-                  className='inline-flex items-center gap-2 rounded-2xl bg-green-600 px-4 py-2 text-white font-medium shadow-lg shadow-green-500/30 hover:bg-green-700 transition-colors disabled:opacity-60'
+                  className='inline-flex items-center gap-2 rounded-2xl bg-orange-600 px-4 py-2 text-white font-medium shadow-lg shadow-orange-500/30 hover:bg-orange-700 transition-colors disabled:opacity-60'
                 >
                   {isSaving ? (
                     <>

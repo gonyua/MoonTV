@@ -161,12 +161,12 @@ export default function DoubanCookieModal({
         {step === 'done' && userId ? (
           // 已登录状态
           <div>
-            <div className='mb-4 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg text-center'>
-              <Check className='w-12 h-12 mx-auto mb-2 text-green-500' />
-              <p className='text-green-700 dark:text-green-300 font-medium'>
+            <div className='mb-4 p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg text-center'>
+              <Check className='w-12 h-12 mx-auto mb-2 text-orange-500' />
+              <p className='text-orange-700 dark:text-orange-300 font-medium'>
                 已连接豆瓣账号
               </p>
-              <p className='text-sm text-green-600 dark:text-green-400'>
+              <p className='text-sm text-orange-600 dark:text-orange-400'>
                 用户ID: {userId}
               </p>
             </div>
@@ -195,7 +195,7 @@ export default function DoubanCookieModal({
 
             <button
               onClick={openDouban}
-              className='w-full py-3 px-4 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2'
+              className='w-full py-3 px-4 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2'
             >
               <ExternalLink className='w-5 h-5' />
               打开豆瓣

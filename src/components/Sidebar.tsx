@@ -34,7 +34,7 @@ const Logo = () => {
       href='/'
       className='flex items-center justify-center h-16 select-none hover:opacity-80 transition-opacity duration-200'
     >
-      <span className='text-2xl font-bold text-green-600 tracking-tight'>
+      <span className='text-2xl font-bold text-orange-600 tracking-tight'>
         {siteName}
       </span>
     </Link>
@@ -198,12 +198,12 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
                 href='/'
                 onClick={() => setActive('/')}
                 data-active={active === '/'}
-                className={`group flex items-center rounded-lg px-2 py-2 pl-4 text-gray-700 hover:bg-gray-100/30 hover:text-green-600 data-[active=true]:bg-green-500/20 data-[active=true]:text-green-700 font-medium transition-colors duration-200 min-h-[40px] dark:text-gray-300 dark:hover:text-green-400 dark:data-[active=true]:bg-green-500/10 dark:data-[active=true]:text-green-400 ${
+                className={`group flex items-center rounded-lg px-2 py-2 pl-4 text-gray-700 hover:bg-gray-100/30 hover:text-orange-600 data-[active=true]:bg-orange-500/20 data-[active=true]:text-orange-700 font-medium transition-colors duration-200 min-h-[40px] dark:text-gray-300 dark:hover:text-orange-400 dark:data-[active=true]:bg-orange-500/10 dark:data-[active=true]:text-orange-400 ${
                   isCollapsed ? 'w-full max-w-none mx-0' : 'mx-0'
                 } gap-3 justify-start`}
               >
                 <div className='w-4 h-4 flex items-center justify-center'>
-                  <Home className='h-4 w-4 text-gray-500 group-hover:text-green-600 data-[active=true]:text-green-700 dark:text-gray-400 dark:group-hover:text-green-400 dark:data-[active=true]:text-green-400' />
+                  <Home className='h-4 w-4 text-gray-500 group-hover:text-orange-600 data-[active=true]:text-orange-700 dark:text-gray-400 dark:group-hover:text-orange-400 dark:data-[active=true]:text-orange-400' />
                 </div>
                 {!isCollapsed && (
                   <span className='whitespace-nowrap transition-opacity duration-200 opacity-100'>
@@ -235,12 +235,12 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
                       href={item.href}
                       onClick={() => setActive(item.href)}
                       data-active={isActive}
-                      className={`group flex items-center rounded-lg px-2 py-2 pl-4 text-sm text-gray-700 hover:bg-gray-100/30 hover:text-green-600 data-[active=true]:bg-green-500/20 data-[active=true]:text-green-700 transition-colors duration-200 min-h-[40px] dark:text-gray-300 dark:hover:text-green-400 dark:data-[active=true]:bg-green-500/10 dark:data-[active=true]:text-green-400 ${
+                      className={`group flex items-center rounded-lg px-2 py-2 pl-4 text-sm text-gray-700 hover:bg-gray-100/30 hover:text-orange-600 data-[active=true]:bg-orange-500/20 data-[active=true]:text-orange-700 transition-colors duration-200 min-h-[40px] dark:text-gray-300 dark:hover:text-orange-400 dark:data-[active=true]:bg-orange-500/10 dark:data-[active=true]:text-orange-400 ${
                         isCollapsed ? 'w-full max-w-none mx-0' : 'mx-0'
                       } gap-3 justify-start`}
                     >
                       <div className='w-4 h-4 flex items-center justify-center'>
-                        <Icon className='h-4 w-4 text-gray-500 group-hover:text-green-600 data-[active=true]:text-green-700 dark:text-gray-400 dark:group-hover:text-green-400 dark:data-[active=true]:text-green-400' />
+                        <Icon className='h-4 w-4 text-gray-500 group-hover:text-orange-600 data-[active=true]:text-orange-700 dark:text-gray-400 dark:group-hover:text-orange-400 dark:data-[active=true]:text-orange-400' />
                       </div>
                       {!isCollapsed && (
                         <span className='whitespace-nowrap transition-opacity duration-200 opacity-100'>
@@ -259,12 +259,12 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
                     setActive('/search');
                   }}
                   data-active={active === '/search'}
-                  className={`group flex items-center rounded-lg px-2 py-2 pl-4 text-sm text-gray-700 hover:bg-gray-100/30 hover:text-green-600 data-[active=true]:bg-green-500/20 data-[active=true]:text-green-700 transition-colors duration-200 min-h-[40px] dark:text-gray-300 dark:hover:text-green-400 dark:data-[active=true]:bg-green-500/10 dark:data-[active=true]:text-green-400 ${
+                  className={`group flex items-center rounded-lg px-2 py-2 pl-4 text-sm text-gray-700 hover:bg-gray-100/30 hover:text-orange-600 data-[active=true]:bg-orange-500/20 data-[active=true]:text-orange-700 transition-colors duration-200 min-h-[40px] dark:text-gray-300 dark:hover:text-orange-400 dark:data-[active=true]:bg-orange-500/10 dark:data-[active=true]:text-orange-400 ${
                     isCollapsed ? 'w-full max-w-none mx-0' : 'mx-0'
                   } gap-3 justify-start`}
                 >
                   <div className='w-4 h-4 flex items-center justify-center'>
-                    <Search className='h-4 w-4 text-gray-500 group-hover:text-green-600 data-[active=true]:text-green-700 dark:text-gray-400 dark:group-hover:text-green-400 dark:data-[active=true]:text-green-400' />
+                    <Search className='h-4 w-4 text-gray-500 group-hover:text-orange-600 data-[active=true]:text-orange-700 dark:text-gray-400 dark:group-hover:text-orange-400 dark:data-[active=true]:text-orange-400' />
                   </div>
                   {!isCollapsed && (
                     <span className='whitespace-nowrap transition-opacity duration-200 opacity-100'>
