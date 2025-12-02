@@ -311,7 +311,7 @@ function HomeClient() {
                   </button>
                 )}
               </div>
-              <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-14 sm:gap-y-20 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8'>
+              <div className='justify-start grid grid-cols-3 gap-x-4 gap-y-8 sm:gap-y-10 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8'>
                 {favoriteItems.map((item) => (
                   <div key={item.id + item.source} className='w-full'>
                     <VideoCard
@@ -353,7 +353,7 @@ function HomeClient() {
               </div>
               {doubanMineLoading ? (
                 // 加载状态
-                <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-14 sm:gap-y-20 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8'>
+                <div className='justify-start grid grid-cols-3 gap-x-4 gap-y-8 sm:gap-y-10 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8'>
                   {Array.from({ length: 6 }).map((_, index) => (
                     <div key={index} className='w-full'>
                       <div className='relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-gray-200 animate-pulse dark:bg-gray-800'>
@@ -377,7 +377,7 @@ function HomeClient() {
               ) : (
                 // 数据展示
                 <>
-                  <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-14 sm:gap-y-20 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8'>
+                  <div className='justify-start grid grid-cols-3 gap-x-4 gap-y-8 sm:gap-y-10 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8'>
                     {doubanMineData[activeTab].map((item) => (
                       <div key={item.id} className='w-full'>
                         <VideoCard
