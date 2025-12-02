@@ -433,8 +433,8 @@ function HomeClient() {
               <ContinueWatching />
 
               {/* 热门电影 */}
-              <section className='mb-8'>
-                <div className='mb-4 flex items-center justify-between'>
+              <section className='mb-4'>
+                <div className='mb-2 flex items-center justify-between'>
                   <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
                     热门电影
                   </h2>
@@ -481,8 +481,8 @@ function HomeClient() {
               </section>
 
               {/* 热门剧集 */}
-              <section className='mb-8'>
-                <div className='mb-4 flex items-center justify-between'>
+              <section className='mb-4'>
+                <div className='mb-2 flex items-center justify-between'>
                   <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
                     热门剧集
                   </h2>
@@ -528,8 +528,8 @@ function HomeClient() {
               </section>
 
               {/* 热门综艺 */}
-              <section className='mb-8'>
-                <div className='mb-4 flex items-center justify-between'>
+              <section className='mb-4'>
+                <div className='mb-2 flex items-center justify-between'>
                   <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
                     热门综艺
                   </h2>
