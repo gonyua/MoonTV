@@ -4,7 +4,7 @@
 
 import { ChevronRight, Settings } from 'lucide-react';
 import Link from 'next/link';
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 
 // 客户端收藏 API
 import {
@@ -52,6 +52,10 @@ function HomeClient() {
   const [doubanMineLoadingMore, setDoubanMineLoadingMore] = useState(false);
   const [showCookieModal, setShowCookieModal] = useState(false);
   const [doubanMineError, setDoubanMineError] = useState<string | null>(null);
+
+  // IntersectionObserver refs for infinite scroll
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const loadingRef = useRef<HTMLDivElement>(null);
 
   // 检查公告弹窗状态
   useEffect(() => {
@@ -243,18 +247,71 @@ function HomeClient() {
     }
   };
 
+  // 加载更多
+  const handleLoadMore = useCallback(
+    (status: 'wish' | 'do' | 'collect') => {
+      if (!doubanMineLoadingMore && doubanMineHasMore[status]) {
+        fetchDoubanMine(status, true);
+      }
+    },
+    [doubanMineLoadingMore, doubanMineHasMore, fetchDoubanMine]
+  );
+
+  // 设置滚动监听 - 无限滚动加载更多
+  useEffect(() => {
+    // 只对豆瓣个人数据tab启用
+    if (activeTab !== 'wish' && activeTab !== 'do' && activeTab !== 'collect') {
+      return;
+    }
+
+    // 如果没有更多数据或正在加载，则不设置监听
+    if (
+      !doubanMineHasMore[activeTab] ||
+      doubanMineLoadingMore ||
+      doubanMineLoading
+    ) {
+      return;
+    }
+
+    // 确保 loadingRef 存在
+    if (!loadingRef.current) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (
+          entries[0].isIntersecting &&
+          doubanMineHasMore[activeTab] &&
+          !doubanMineLoadingMore
+        ) {
+          handleLoadMore(activeTab);
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    observer.observe(loadingRef.current);
+    observerRef.current = observer;
+
+    return () => {
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+      }
+    };
+  }, [
+    activeTab,
+    doubanMineHasMore,
+    doubanMineLoadingMore,
+    doubanMineLoading,
+    handleLoadMore,
+  ]);
+
   // 刷新数据
   const handleRefresh = (status: 'wish' | 'do' | 'collect') => {
     setDoubanMineData((prev) => ({ ...prev, [status]: [] }));
     setDoubanMineHasMore((prev) => ({ ...prev, [status]: true }));
     fetchDoubanMine(status);
-  };
-
-  // 加载更多
-  const handleLoadMore = (status: 'wish' | 'do' | 'collect') => {
-    if (!doubanMineLoadingMore && doubanMineHasMore[status]) {
-      fetchDoubanMine(status, true);
-    }
   };
 
   const handleCloseAnnouncement = (announcement: string) => {
@@ -404,22 +461,33 @@ function HomeClient() {
                         </div>
                       )}
                   </div>
-                  {/* 加载更多按钮 */}
-                  {doubanMineData[activeTab].length > 0 &&
-                    doubanMineHasMore[activeTab] && (
-                      <div className='mt-8 text-center'>
-                        <button
-                          onClick={() => handleLoadMore(activeTab)}
-                          disabled={doubanMineLoadingMore}
-                          className='px-6 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg transition-colors disabled:opacity-50'
-                        >
-                          {doubanMineLoadingMore ? '加载中...' : '加载更多'}
-                        </button>
+                  {/* 加载更多指示器 */}
+                  {doubanMineHasMore[activeTab] &&
+                    doubanMineData[activeTab].length > 0 && (
+                      <div
+                        ref={(el) => {
+                          if (el && el.offsetParent !== null) {
+                            (
+                              loadingRef as React.MutableRefObject<HTMLDivElement | null>
+                            ).current = el;
+                          }
+                        }}
+                        className='flex justify-center mt-12 py-8'
+                      >
+                        {doubanMineLoadingMore && (
+                          <div className='flex items-center gap-2'>
+                            <div className='animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500'></div>
+                            <span className='text-gray-600 dark:text-gray-400'>
+                              加载中...
+                            </span>
+                          </div>
+                        )}
                       </div>
                     )}
-                  {doubanMineData[activeTab].length > 0 &&
-                    !doubanMineHasMore[activeTab] && (
-                      <div className='mt-8 text-center text-gray-400 dark:text-gray-500 text-sm'>
+                  {/* 没有更多数据提示 */}
+                  {!doubanMineHasMore[activeTab] &&
+                    doubanMineData[activeTab].length > 0 && (
+                      <div className='text-center text-gray-500 py-8'>
                         已加载全部
                       </div>
                     )}
