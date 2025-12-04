@@ -1,0 +1,14 @@
+# Cloudflare Worker 配置文件
+# 使用方法: cd scripts && wrangler deploy -c commute-cron-wrangler.toml
+
+name = "commute-cron"
+main = "commute-cron-worker.js"
+compatibility_date = "2024-01-01"
+
+[triggers]
+# UTC 0:20 = 北京时间 8:20，周一到周五
+crons = ["20 0 * * 1-5"]
+
+[vars]
+# 在 Cloudflare Dashboard 中设置此变量，或使用 wrangler secret
+# COMMUTE_API_URL = "https://your-domain.com/api/commute"

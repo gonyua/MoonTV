@@ -1,0 +1,14 @@
+# Cloudflare Worker 配置文件 - 剧集更新定时刷新
+# 使用方法: cd scripts && wrangler deploy -c refresh-cron-wrangler.toml
+
+name = "refresh-cron"
+main = "refresh-cron-worker.js"
+compatibility_date = "2024-01-01"
+
+[triggers]
+# UTC 17:00 = 北京时间凌晨 1:00，每天执行
+crons = ["0 17 * * *"]
+
+[vars]
+# 在 Cloudflare Dashboard 中设置此变量，或使用 wrangler secret
+# CRON_API_URL = "https://your-domain.com/api/cron"
