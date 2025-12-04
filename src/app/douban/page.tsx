@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { getDoubanCategories, getDoubanList } from '@/lib/douban.client';
+import { getDoubanCategories, getDoubanList } from '@/lib/client/douban.client';
 import { DoubanItem, DoubanResult } from '@/lib/types';
 
 import DoubanCardSkeleton from '@/components/DoubanCardSkeleton';

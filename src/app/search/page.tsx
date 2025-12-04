@@ -11,7 +11,7 @@ import {
   deleteSearchHistory,
   getSearchHistory,
   subscribeToDataUpdates,
-} from '@/lib/db.client';
+} from '@/lib/client/db.client';
 import { SearchResult } from '@/lib/types';
 import { yellowWords } from '@/lib/yellow';
 

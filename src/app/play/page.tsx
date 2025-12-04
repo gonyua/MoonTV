@@ -20,7 +20,7 @@ import {
   savePlayRecord,
   saveSkipConfig,
   subscribeToDataUpdates,
-} from '@/lib/db.client';
+} from '@/lib/client/db.client';
 import { SearchResult } from '@/lib/types';
 import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
 

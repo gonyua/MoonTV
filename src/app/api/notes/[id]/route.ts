@@ -3,7 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
-import { deleteNote, getNote, updateNote } from '@/lib/notes.server';
+import { deleteNote, getNote, updateNote } from '@/lib/server/notes.server';
 
 export const runtime = 'edge';
 

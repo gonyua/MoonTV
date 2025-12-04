@@ -8,7 +8,7 @@ import {
   getDoubanUserId,
   setDoubanCookie,
   syncDoubanCookie,
-} from '@/lib/douban-auth';
+} from '@/lib/client/douban-auth';
 
 interface DoubanCookieModalProps {
   isOpen: boolean;

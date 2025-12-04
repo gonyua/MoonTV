@@ -3,7 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
-import { getStorage } from '@/lib/db';
+import { getStorage } from '@/lib/server/db';
 import { IStorage } from '@/lib/types';
 
 export const runtime = 'edge';

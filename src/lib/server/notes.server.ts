@@ -1,4 +1,4 @@
-import { NoteInput, NoteItem } from './notes.types';
+import { NoteInput, NoteItem } from '../notes.types';
 
 interface D1Database {
   prepare(sql: string): D1PreparedStatement;

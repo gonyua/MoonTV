@@ -8,7 +8,7 @@ import {
   addSite,
   fetchFavicon,
   getCategories,
-} from '@/lib/navs.client';
+} from '@/lib/client/navs.client';
 import {
   flattenFolders,
   parseBookmarksHtml,

@@ -6,7 +6,7 @@ import { GripVertical, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import Image from 'next/image';
 import { useState } from 'react';
 
-import { generateBgColor } from '@/lib/navs.client';
+import { generateBgColor } from '@/lib/client/navs.client';
 import { NavSite } from '@/lib/navs.types';
 
 interface NavsSiteCardProps {

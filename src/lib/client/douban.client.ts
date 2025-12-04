@@ -1,5 +1,5 @@
-import { DoubanItem, DoubanResult } from './types';
-import { getDoubanProxyUrl } from './utils';
+import { DoubanItem, DoubanResult } from '../types';
+import { getDoubanProxyUrl } from '../utils';
 
 interface DoubanCategoriesParams {
   kind: 'tv' | 'movie';

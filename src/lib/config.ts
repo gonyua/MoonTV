@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, no-console, @typescript-eslint/no-non-null-assertion */
 
-import { getStorage } from '@/lib/db';
+import { getStorage } from '@/lib/server/db';
 
 import { AdminConfig } from './admin.types';
 import runtimeConfig from './runtime';

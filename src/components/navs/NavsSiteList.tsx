@@ -18,7 +18,11 @@ import {
 import { ChevronRight, Plus, Tag, X } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 
-import { deleteSite, getCategoryTags, reorderSites } from '@/lib/navs.client';
+import {
+  deleteSite,
+  getCategoryTags,
+  reorderSites,
+} from '@/lib/client/navs.client';
 import { NavCategory, NavSite } from '@/lib/navs.types';
 
 import NavsSiteCard from './NavsSiteCard';

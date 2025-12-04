@@ -9,7 +9,7 @@ import {
   NavSite,
   UpdateCategoryParams,
   UpdateSiteParams,
-} from './navs.types';
+} from '../navs.types';
 
 const NAVS_CATEGORIES_KEY = 'moontv_nav_categories';
 const NAVS_SITES_KEY = 'moontv_nav_sites';

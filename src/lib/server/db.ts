@@ -1,10 +1,10 @@
 /* eslint-disable no-console, @typescript-eslint/no-explicit-any, @typescript-eslint/no-non-null-assertion */
 
-import { AdminConfig } from './admin.types';
 import { D1Storage } from './d1.db';
 import { RedisStorage } from './redis.db';
-import { Favorite, IStorage, PlayRecord, SkipConfig } from './types';
 import { UpstashRedisStorage } from './upstash.db';
+import { AdminConfig } from '../admin.types';
+import { Favorite, IStorage, PlayRecord, SkipConfig } from '../types';
 
 // storage type 常量: 'localstorage' | 'redis' | 'd1' | 'upstash'，默认 'localstorage'
 const STORAGE_TYPE =

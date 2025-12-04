@@ -4,7 +4,11 @@ import { Clock3, Plus, Wand2 } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 
-import { getAllNotes, NoteItem, subscribeToNotes } from '@/lib/notes.client';
+import {
+  getAllNotes,
+  NoteItem,
+  subscribeToNotes,
+} from '@/lib/client/notes.client';
 import { createPreview, formatNoteDate } from '@/lib/notes.utils';
 
 import { NotesStandaloneLayout } from './NotesStandaloneLayout';

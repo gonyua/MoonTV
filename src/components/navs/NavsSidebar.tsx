@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { deleteCategory, reorderCategories } from '@/lib/navs.client';
+import { deleteCategory, reorderCategories } from '@/lib/client/navs.client';
 import { NavCategory } from '@/lib/navs.types';
 
 interface SortableCategoryItemProps {

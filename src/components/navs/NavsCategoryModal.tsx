@@ -3,7 +3,7 @@
 import { X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
-import { addCategory, updateCategory } from '@/lib/navs.client';
+import { addCategory, updateCategory } from '@/lib/client/navs.client';
 import { NavCategory } from '@/lib/navs.types';
 
 interface NavsCategoryModalProps {

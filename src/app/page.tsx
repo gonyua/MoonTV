@@ -12,9 +12,9 @@ import {
   getAllFavorites,
   getAllPlayRecords,
   subscribeToDataUpdates,
-} from '@/lib/db.client';
-import { getDoubanCategories } from '@/lib/douban.client';
-import { getDoubanCookie, isDoubanLoggedIn } from '@/lib/douban-auth';
+} from '@/lib/client/db.client';
+import { getDoubanCategories } from '@/lib/client/douban.client';
+import { getDoubanCookie, isDoubanLoggedIn } from '@/lib/client/douban-auth';
 import { DoubanItem, DoubanMineItem, DoubanMineResult } from '@/lib/types';
 
 import CapsuleSwitch from '@/components/CapsuleSwitch';
@@ -24,6 +24,14 @@ import PageLayout from '@/components/PageLayout';
 import ScrollableRow from '@/components/ScrollableRow';
 import { useSite } from '@/components/SiteProvider';
 import VideoCard from '@/components/VideoCard';
+
+const STORAGE_TYPE =
+  (process.env.NEXT_PUBLIC_STORAGE_TYPE as
+    | 'localstorage'
+    | 'redis'
+    | 'd1'
+    | 'upstash'
+    | undefined) || 'localstorage';
 
 type TabType = 'home' | 'wish' | 'do' | 'collect' | 'favorites';
 
@@ -176,10 +184,21 @@ function HomeClient() {
   // 获取豆瓣个人数据
   const fetchDoubanMine = useCallback(
     async (status: 'wish' | 'do' | 'collect', loadMore = false) => {
-      const cookie = getDoubanCookie();
-      if (!cookie) {
-        setShowCookieModal(true);
-        return;
+      // 计算起始位置
+      const start = loadMore ? doubanMineData[status].length : 0;
+
+      // 根据存储类型构建请求 URL
+      let url = `/api/douban/mine?status=${status}&start=${start}`;
+
+      // 非 D1 模式下仍然从浏览器获取 cookie 并透传给服务端
+      if (STORAGE_TYPE !== 'd1') {
+        const cookie = getDoubanCookie();
+        if (!cookie) {
+          setShowCookieModal(true);
+          return;
+        }
+
+        url += `&cookie=${encodeURIComponent(cookie)}`;
       }
 
       if (loadMore) {
@@ -189,15 +208,8 @@ function HomeClient() {
       }
       setDoubanMineError(null);
 
-      // 计算起始位置
-      const start = loadMore ? doubanMineData[status].length : 0;
-
       try {
-        const response = await fetch(
-          `/api/douban/mine?status=${status}&start=${start}&cookie=${encodeURIComponent(
-            cookie
-          )}`
-        );
+        const response = await fetch(url);
         const data: DoubanMineResult = await response.json();
 
         if (data.code === 401 || data.code === 403) {

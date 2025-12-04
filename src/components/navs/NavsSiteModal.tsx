@@ -3,7 +3,7 @@
 import { X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
-import { addSite, fetchFavicon, updateSite } from '@/lib/navs.client';
+import { addSite, fetchFavicon, updateSite } from '@/lib/client/navs.client';
 import { NavCategory, NavSite } from '@/lib/navs.types';
 
 interface NavsSiteModalProps {

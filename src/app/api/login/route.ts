@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getConfig } from '@/lib/config';
-import { db } from '@/lib/db';
+import { db } from '@/lib/server/db';
 
 export const runtime = 'edge';
 

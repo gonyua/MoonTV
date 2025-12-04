@@ -13,7 +13,7 @@ import {
   useState,
 } from 'react';
 
-import { createNote } from '@/lib/notes.client';
+import { createNote } from '@/lib/client/notes.client';
 
 import { NotesStandaloneLayout } from '../NotesStandaloneLayout';
 

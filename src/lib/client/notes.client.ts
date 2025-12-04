@@ -1,9 +1,9 @@
 'use client';
 
-import { getAuthInfoFromBrowserCookie } from './auth';
-import { NoteInput, NoteItem } from './notes.types';
+import { getAuthInfoFromBrowserCookie } from '../auth';
+import { NoteInput, NoteItem } from '../notes.types';
 
-export type { NoteInput, NoteItem } from './notes.types';
+export type { NoteInput, NoteItem } from '../notes.types';
 
 const BASE_STORAGE_KEY = 'moontv_notes';
 const NOTES_EVENT = 'notesUpdated';

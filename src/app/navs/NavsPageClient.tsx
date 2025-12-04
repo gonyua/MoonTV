@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { getNavsData, subscribeToNavsUpdates } from '@/lib/navs.client';
+import { getNavsData, subscribeToNavsUpdates } from '@/lib/client/navs.client';
 import { NavCategory, NavsData, NavSite } from '@/lib/navs.types';
 
 import NavsCategoryModal from '@/components/navs/NavsCategoryModal';

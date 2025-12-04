@@ -19,7 +19,7 @@ import {
   NoteItem,
   subscribeToNotes,
   updateNote,
-} from '@/lib/notes.client';
+} from '@/lib/client/notes.client';
 import { formatNoteDate } from '@/lib/notes.utils';
 
 import { NotesStandaloneLayout } from '../NotesStandaloneLayout';

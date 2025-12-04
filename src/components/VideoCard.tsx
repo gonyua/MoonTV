@@ -12,7 +12,7 @@ import {
   isFavorited,
   saveFavorite,
   subscribeToDataUpdates,
-} from '@/lib/db.client';
+} from '@/lib/client/db.client';
 import { SearchResult } from '@/lib/types';
 import { processImageUrl } from '@/lib/utils';
 

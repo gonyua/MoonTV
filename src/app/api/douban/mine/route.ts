@@ -1,8 +1,33 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
+import { getAuthInfoFromCookie } from '@/lib/auth';
 import { parseDoubanMineHtml } from '@/lib/douban-mine';
 
 export const runtime = 'edge';
+
+interface D1Database {
+  prepare(sql: string): D1PreparedStatement;
+}
+
+interface D1PreparedStatement {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  bind(...values: any[]): D1PreparedStatement;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  first<T = any>(): Promise<T | null>;
+}
+
+function getD1Database(): D1Database | null {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (process.env as any).DB as D1Database | null;
+}
+
+const STORAGE_TYPE =
+  (process.env.NEXT_PUBLIC_STORAGE_TYPE as
+    | 'localstorage'
+    | 'redis'
+    | 'd1'
+    | 'upstash'
+    | undefined) || 'localstorage';
 
 const STATUS_MAP: Record<string, string> = {
   wish: 'wish', // 想看
@@ -10,12 +35,47 @@ const STATUS_MAP: Record<string, string> = {
   collect: 'collect', // 看过
 };
 
-export async function GET(request: Request) {
+async function getDoubanCookieFromServer(
+  request: NextRequest
+): Promise<string | null> {
+  if (STORAGE_TYPE !== 'd1') return null;
+
+  const db = getD1Database();
+  if (!db) return null;
+
+  const authInfo = getAuthInfoFromCookie(request);
+  if (!authInfo?.username) return null;
+
+  try {
+    const result = await db
+      .prepare(
+        'SELECT config_value FROM user_configs WHERE username = ? AND config_key = ?'
+      )
+      .bind(authInfo.username, 'douban_cookie')
+      .first<{ config_value: string }>();
+
+    if (!result?.config_value) {
+      return null;
+    }
+
+    return result.config_value;
+  } catch {
+    return null;
+  }
+}
+
+export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
 
   const status = searchParams.get('status') || 'wish';
   const start = parseInt(searchParams.get('start') || '0', 10);
-  const doubanCookie = searchParams.get('cookie') || '';
+  let doubanCookie = '';
+
+  if (STORAGE_TYPE === 'd1') {
+    doubanCookie = (await getDoubanCookieFromServer(request)) || '';
+  } else {
+    doubanCookie = searchParams.get('cookie') || '';
+  }
 
   // 验证 status 参数
   if (!STATUS_MAP[status]) {
