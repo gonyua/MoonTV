@@ -5,7 +5,6 @@ import { useEffect, useState } from 'react';
 
 import {
   clearDoubanCookie,
-  getDoubanUserId,
   setDoubanCookie,
   syncDoubanCookie,
 } from '@/lib/client/douban-auth';
@@ -31,10 +30,10 @@ export default function DoubanCookieModal({
 
   useEffect(() => {
     if (isOpen) {
-      // 先从D1同步cookie，再检查状态
-      syncDoubanCookie().then(() => {
-        setUserId(getDoubanUserId());
-        setStep(getDoubanUserId() ? 'done' : 'login');
+      // 每次打开弹窗时，从源头 Cookie 解析当前绑定的豆瓣 ID
+      syncDoubanCookie().then((id) => {
+        setUserId(id);
+        setStep(id ? 'done' : 'login');
         setError('');
         setCookie('');
       });
@@ -101,7 +100,9 @@ export default function DoubanCookieModal({
     setSaving(true);
     try {
       await setDoubanCookie(extractedCookie);
-      setUserId(getDoubanUserId());
+      // 保存后再次从源头 Cookie 获取最新绑定 ID
+      const id = await syncDoubanCookie();
+      setUserId(id);
       setError('');
       setStep('done');
 

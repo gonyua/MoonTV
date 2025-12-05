@@ -14,7 +14,7 @@ import {
   subscribeToDataUpdates,
 } from '@/lib/client/db.client';
 import { getDoubanCategories } from '@/lib/client/douban.client';
-import { getDoubanCookie, isDoubanLoggedIn } from '@/lib/client/douban-auth';
+import { getDoubanCookie, syncDoubanCookie } from '@/lib/client/douban-auth';
 import { DoubanItem, DoubanMineItem, DoubanMineResult } from '@/lib/types';
 
 import CapsuleSwitch from '@/components/CapsuleSwitch';
@@ -60,6 +60,7 @@ function HomeClient() {
   const [doubanMineLoadingMore, setDoubanMineLoadingMore] = useState(false);
   const [showCookieModal, setShowCookieModal] = useState(false);
   const [doubanMineError, setDoubanMineError] = useState<string | null>(null);
+  const [doubanLoggedIn, setDoubanLoggedIn] = useState(false);
 
   // IntersectionObserver refs for infinite scroll
   const observerRef = useRef<IntersectionObserver | null>(null);
@@ -90,6 +91,19 @@ function HomeClient() {
   };
 
   const [favoriteItems, setFavoriteItems] = useState<FavoriteItem[]>([]);
+
+  // 同步当前豆瓣登录状态（从 Cookie 源解析）
+  useEffect(() => {
+    let cancelled = false;
+    syncDoubanCookie().then((id) => {
+      if (!cancelled) {
+        setDoubanLoggedIn(Boolean(id));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [showCookieModal]);
 
   useEffect(() => {
     const fetchDoubanData = async () => {
@@ -190,7 +204,7 @@ function HomeClient() {
       // 根据存储类型构建请求 URL
       let url = `/api/douban/mine?status=${status}&start=${start}`;
 
-      // 非 D1 模式下仍然从浏览器获取 cookie 并透传给服务端
+      // 非 D1 模式下仍然从localStorage获取 豆瓣cookie 并透传给服务端
       if (STORAGE_TYPE !== 'd1') {
         const cookie = getDoubanCookie();
         if (!cookie) {
@@ -411,7 +425,7 @@ function HomeClient() {
                     ? '在看'
                     : '看过'}
                 </h2>
-                {isDoubanLoggedIn() && doubanMineData[activeTab].length > 0 && (
+                {doubanLoggedIn && doubanMineData[activeTab].length > 0 && (
                   <button
                     className='text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
                     onClick={() => handleRefresh(activeTab)}
@@ -461,8 +475,8 @@ function HomeClient() {
                     {doubanMineData[activeTab].length === 0 &&
                       !doubanMineLoading && (
                         <div className='col-span-full text-center text-gray-500 py-8 dark:text-gray-400'>
-                          {isDoubanLoggedIn() ? '暂无数据' : '请先登录豆瓣账号'}
-                          {!isDoubanLoggedIn() && (
+                          {doubanLoggedIn ? '暂无数据' : '请先登录豆瓣账号'}
+                          {!doubanLoggedIn && (
                             <button
                               className='ml-2 text-blue-500 hover:text-blue-600'
                               onClick={() => setShowCookieModal(true)}

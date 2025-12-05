@@ -1,60 +1,109 @@
+'use client';
+
 /* eslint-disable no-console */
-const DOUBAN_COOKIE_KEY = 'douban_cookie';
+
+import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
+
 const CONFIG_KEY = 'douban_cookie';
 
-// 获取存储类型
-function getStorageType(): string {
-  if (typeof window === 'undefined') return 'localstorage';
-  return process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage';
+// 存储类型（与其他 client 模块保持一致）
+const STORAGE_TYPE = (() => {
+  const runtimeConfig =
+    typeof window !== 'undefined'
+      ? (
+          window as Window & {
+            RUNTIME_CONFIG?: { STORAGE_TYPE?: string };
+          }
+        ).RUNTIME_CONFIG
+      : undefined;
+
+  const storageType =
+    runtimeConfig?.STORAGE_TYPE ||
+    (process.env.NEXT_PUBLIC_STORAGE_TYPE as
+      | 'localstorage'
+      | 'redis'
+      | 'd1'
+      | 'upstash'
+      | undefined) ||
+    'localstorage';
+
+  return storageType;
+})();
+
+const IS_D1 = STORAGE_TYPE === 'd1';
+
+interface UserConfigResponse {
+  code: number;
+  data?: {
+    value?: string;
+  } | null;
 }
 
-// 是否使用D1存储
-function isD1Storage(): boolean {
-  return getStorageType() === 'd1';
+// 获取当前站点登录用户名
+function getCurrentUsername(): string | null {
+  const authInfo = getAuthInfoFromBrowserCookie();
+  const username = authInfo?.username?.trim();
+  return username || null;
 }
 
-// 同步获取cookie（从localStorage缓存）
+// 非d1模式 本地 Cookie 存储 key
+function getCookieStorageKey(): string {
+  const username = getCurrentUsername();
+  return username ? `${CONFIG_KEY}_${username}` : CONFIG_KEY;
+}
+
+// 从 cookie 字符串中提取用户 ID
+function extractUserIdFromCookie(cookie: string): string | null {
+  const match = cookie.match(/dbcl2="(\d+):/);
+  return match ? match[1] : null;
+}
+
+// ---------- Cookie 获取 ----------
+
+// 同同步获取 cookie（仅非 D1 模式）
 export function getDoubanCookie(): string | null {
   if (typeof window === 'undefined') return null;
-  return localStorage.getItem(DOUBAN_COOKIE_KEY);
+  if (IS_D1) return null;
+
+  try {
+    return localStorage.getItem(getCookieStorageKey());
+  } catch {
+    return null;
+  }
 }
 
-// 异步从D1获取cookie
+// 异步获取 cookie：D1 每次走服务器，非 D1 直接读 localStorage
 export async function fetchDoubanCookie(): Promise<string | null> {
   if (typeof window === 'undefined') return null;
 
-  // 先返回本地缓存
-  const localCookie = localStorage.getItem(DOUBAN_COOKIE_KEY);
-
-  // 如果使用D1，尝试从服务器获取
-  if (isD1Storage()) {
+  if (IS_D1) {
     try {
       const response = await fetch(`/api/user-config?key=${CONFIG_KEY}`);
-      const data = await response.json();
-      if (data.code === 200 && data.data?.value) {
-        // 同步到本地缓存
-        localStorage.setItem(DOUBAN_COOKIE_KEY, data.data.value);
-        return data.data.value;
+      const data = (await response.json()) as UserConfigResponse;
+
+      if (data.code !== 200 || !data.data || !data.data.value) {
+        return null;
       }
+
+      return String(data.data.value);
     } catch (error) {
-      console.error('从D1获取cookie失败:', error);
+      console.error('从 D1 获取豆瓣 Cookie 失败:', error);
+      return null;
     }
   }
 
-  return localCookie;
+  return getDoubanCookie();
 }
 
-// 保存cookie
+// ---------- Cookie 写入 / 清理 ----------
+
+// 保存 cookie
 export async function setDoubanCookie(cookie: string): Promise<void> {
   if (typeof window === 'undefined') return;
 
-  // 始终保存到localStorage（作为缓存）
-  localStorage.setItem(DOUBAN_COOKIE_KEY, cookie);
-
-  // 如果使用D1，同时保存到服务器
-  if (isD1Storage()) {
+  if (IS_D1) {
+    // D1 模式：仅保存到服务器
     try {
-      const userId = extractUserIdFromCookie(cookie);
       await fetch('/api/user-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -63,60 +112,61 @@ export async function setDoubanCookie(cookie: string): Promise<void> {
           value: cookie,
           type: 'string',
           description: '豆瓣Cookie',
-          metadata: userId ? { userId } : undefined,
         }),
       });
     } catch (error) {
-      console.error('保存cookie到D1失败:', error);
+      console.error('保存豆瓣 Cookie 到 D1 失败:', error);
+    }
+  } else {
+    // 非 D1 模式：cookie 仅存 localStorage
+    try {
+      localStorage.setItem(getCookieStorageKey(), cookie);
+    } catch {
+      // ignore
     }
   }
 }
 
-// 清除cookie
+// 清除 cookie
 export async function clearDoubanCookie(): Promise<void> {
   if (typeof window === 'undefined') return;
 
-  localStorage.removeItem(DOUBAN_COOKIE_KEY);
-
-  if (isD1Storage()) {
+  if (IS_D1) {
+    // D1 模式：删除服务器端配置
     try {
       await fetch(`/api/user-config?key=${CONFIG_KEY}`, {
         method: 'DELETE',
       });
     } catch (error) {
-      console.error('从D1删除cookie失败:', error);
+      console.error('从 D1 删除豆瓣 Cookie 失败:', error);
+    }
+  } else {
+    // 非 D1 模式：删除 localStorage 中的 cookie
+    try {
+      localStorage.removeItem(getCookieStorageKey());
+    } catch {
+      // ignore
     }
   }
 }
 
-// 从cookie字符串中提取用户ID
-function extractUserIdFromCookie(cookie: string): string | null {
-  const match = cookie.match(/dbcl2="(\d+):/);
-  return match ? match[1] : null;
-}
+// 异步读取：D1 模式每次从服务器拿 cookie 再解析；非 D1 从 localStorage 中拿 cookie 再解析
+export async function syncDoubanCookie(): Promise<string | null> {
+  if (typeof window === 'undefined') return null;
 
-export function getDoubanUserId(): string | null {
-  const cookie = getDoubanCookie();
-  if (!cookie) return null;
+  let cookie: string | null = null;
+
+  if (IS_D1) {
+    cookie = await fetchDoubanCookie();
+    if (!cookie) return null;
+  } else {
+    try {
+      cookie = localStorage.getItem(getCookieStorageKey());
+      if (!cookie) return null;
+    } catch {
+      return null;
+    }
+  }
+
   return extractUserIdFromCookie(cookie);
-}
-
-export function isDoubanLoggedIn(): boolean {
-  return getDoubanUserId() !== null;
-}
-
-// 初始化时从D1同步cookie到本地
-export async function syncDoubanCookie(): Promise<void> {
-  if (typeof window === 'undefined') return;
-  if (!isD1Storage()) return;
-
-  try {
-    const response = await fetch(`/api/user-config?key=${CONFIG_KEY}`);
-    const data = await response.json();
-    if (data.code === 200 && data.data?.value) {
-      localStorage.setItem(DOUBAN_COOKIE_KEY, data.data.value);
-    }
-  } catch (error) {
-    console.error('同步cookie失败:', error);
-  }
 }
