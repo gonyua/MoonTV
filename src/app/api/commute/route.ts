@@ -37,6 +37,16 @@ interface BaiduWeatherResult {
       aqi: number; // 空气质量指数
       pm25: number;
     };
+    forecasts?: Array<{
+      text_day?: string;
+      text_night?: string;
+      low?: string | number;
+      high?: string | number;
+      wc_day?: string;
+      wc_night?: string;
+      date?: string;
+      week?: string;
+    }>;
     alerts?: Array<{
       type: string;
       level: string;
@@ -86,7 +96,7 @@ async function fetchWeatherInfo(location: string): Promise<BaiduWeatherResult> {
   const [lat, lng] = location.split(',');
   const weatherLocation = `${lng},${lat}`;
 
-  const url = `https://api.map.baidu.com/weather/v1/?location=${weatherLocation}&data_type=now&ak=${ak}`;
+  const url = `https://api.map.baidu.com/weather/v1/?location=${weatherLocation}&data_type=all&ak=${ak}`;
 
   const response = await fetch(url);
   if (!response.ok) {
@@ -158,6 +168,38 @@ function formatWeatherSection(
   return now.text;
 }
 
+function getBeijingTime() {
+  const now = new Date();
+
+  try {
+    const formatter = new Intl.DateTimeFormat('zh-CN', {
+      timeZone: 'Asia/Shanghai',
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    const parts = formatter.formatToParts(now);
+    const hourPart = parts.find((p) => p.type === 'hour');
+    const minutePart = parts.find((p) => p.type === 'minute');
+    const hour = hourPart
+      ? parseInt(hourPart.value, 10)
+      : now.getUTCHours() + 8;
+    const minute = minutePart
+      ? parseInt(minutePart.value, 10)
+      : now.getUTCMinutes();
+
+    return {
+      hour: ((hour % 24) + 24) % 24,
+      minute,
+    };
+  } catch {
+    return {
+      hour: (((now.getUTCHours() + 8) % 24) + 24) % 24,
+      minute: now.getUTCMinutes(),
+    };
+  }
+}
+
 function formatMessage(
   route: BaiduRouteResult['result'],
   originWeather: BaiduWeatherResult['result'],
@@ -182,19 +224,31 @@ function formatMessage(
     const durationMin = Math.round(r.duration / 60);
     const trafficStatus = TRAFFIC_STATUS[r.traffic_condition] || '未知';
 
+    // 简洁格式：路况大于畅通时加红色感叹号
+    void distanceKm;
+    void durationMin;
+    const warningPrefix =
+      r.traffic_condition > 1
+        ? '<font color="warning">‼️</font>'
+        : '<font color="green">✅</font>';
+    routeSection = `${warningPrefix}${trafficStatus}`;
+
     //     routeSection = `**🚗 通勤路况**
     // > 📍 距离：<font color="info">${distanceKm} 公里</font>
     // > ⏱️ 预计耗时：<font color="warning">${durationMin} 分钟</font>
     // > 🚦 路况：<font color="${r.traffic_condition <= 1 ? 'info' : 'warning'}">${trafficStatus}</font>
     // > 💰 过路费：${r.toll} 元`;
-
-    // 简洁格式：路况大于畅通时加红色感叹号
-    void distanceKm;
-    void durationMin;
-    const warningPrefix =
-      r.traffic_condition > 1 ? '<font color="warning">❗</font>' : '';
-    routeSection = `${warningPrefix}${trafficStatus}`;
   }
+
+  const durationMin = route?.routes?.[0]?.duration
+    ? Math.round(route.routes[0].duration / 60)
+    : 0;
+
+  void timeStr;
+  const originWeatherText = formatWeatherSection(originWeather, '');
+
+  // 简洁格式：畅通，晴，11分钟
+  return `${routeSection}，${originWeatherText}，${durationMin}分钟`;
 
   //   const originWeatherSection = formatWeatherSection(originWeather, '🌤️ 出发地天气');
   //   const destWeatherSection = formatWeatherSection(destWeather, '🌤️ 目的地天气');
@@ -202,19 +256,9 @@ function formatMessage(
   // ${originWeatherSection}
   // ${destWeatherSection}
   // > ⏰ 播报时间：${timeStr}`;
-
-  // 简洁格式：畅通，晴，11分钟
-  void timeStr;
-  const originWeatherText = formatWeatherSection(originWeather, '');
-
-  const durationMin = route?.routes?.[0]?.duration
-    ? Math.round(route.routes[0].duration / 60)
-    : 0;
-
-  return `${routeSection}，${originWeatherText}，${durationMin}分钟`;
 }
 
-export async function GET() {
+async function handleCommuteBroadcast() {
   try {
     console.log('通勤播报查询开始:', new Date().toISOString());
 
@@ -279,4 +323,110 @@ export async function GET() {
       { status: 500 }
     );
   }
+}
+
+async function handleTomorrowWeatherBroadcast() {
+  try {
+    console.log('明日天气播报查询开始:', new Date().toISOString());
+
+    const origin = process.env.COMMUTE_ORIGIN;
+
+    if (!origin) {
+      throw new Error('缺少环境变量: COMMUTE_ORIGIN');
+    }
+
+    const originWeatherResult = await fetchWeatherInfo(origin);
+
+    if (originWeatherResult.status !== 0) {
+      console.warn(
+        `天气API返回错误: ${originWeatherResult.message || 'unknown error'}`
+      );
+    }
+
+    const weather =
+      originWeatherResult.status === 0 ? originWeatherResult.result : undefined;
+
+    let message = '未获取到明日天气预报';
+
+    const forecast = weather?.forecasts && weather.forecasts[0];
+    if (forecast) {
+      const textDay = forecast.text_day || '天气情况未知';
+      const low = forecast.low ?? '';
+      const high = forecast.high ?? '';
+      const wcDay = forecast.wc_day || '';
+
+      const lowStr = low === '' ? '' : String(low);
+      const highStr = high === '' ? '' : String(high);
+      const tempPart =
+        lowStr && highStr ? `${lowStr}~${highStr}℃` : lowStr || highStr;
+
+      if (tempPart && wcDay) {
+        message = `明天${textDay}，${tempPart}，${wcDay}`;
+      } else if (tempPart) {
+        message = `明天${textDay}，${tempPart}`;
+      } else {
+        message = `明天${textDay}`;
+      }
+    }
+
+    await sendToWecom(message);
+
+    console.log('明日天气播报发送成功');
+
+    return NextResponse.json({
+      success: true,
+      message: '明日天气播报已发送到企业微信',
+      data: {
+        originWeatherForecast: forecast ?? null,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('明日天气播报查询失败:', error);
+
+    return NextResponse.json(
+      {
+        success: false,
+        message: '明日天气播报查询失败',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date().toISOString(),
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export async function GET() {
+  const { hour, minute } = getBeijingTime();
+  const totalMinutes = hour * 60 + minute;
+
+  console.log(
+    '通勤接口触发，北京时间:',
+    `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`
+  );
+
+  const morningStart = 8 * 60 + 10;
+  const morningEnd = 8 * 60 + 30;
+  const eveningStart = 20 * 60 - 10;
+  const eveningEnd = 20 * 60 + 10;
+
+  const inMorningWindow =
+    totalMinutes >= morningStart && totalMinutes <= morningEnd;
+  const inEveningWindow =
+    totalMinutes >= eveningStart && totalMinutes <= eveningEnd;
+
+  if (inMorningWindow) {
+    return handleCommuteBroadcast();
+  }
+
+  if (inEveningWindow) {
+    return handleTomorrowWeatherBroadcast();
+  }
+
+  return NextResponse.json({
+    success: false,
+    message:
+      '当前时间不是配置的定时任务时间，仅支持北京时间早上8:20前后10分钟或晚上8:00前后10分钟触发',
+    timestamp: new Date().toISOString(),
+  });
 }

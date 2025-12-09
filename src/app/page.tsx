@@ -4,6 +4,7 @@
 
 import { ChevronRight, Settings } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 
 // 客户端收藏 API
@@ -15,7 +16,13 @@ import {
 } from '@/lib/client/db.client';
 import { getDoubanCategories } from '@/lib/client/douban.client';
 import { getDoubanCookie, syncDoubanCookie } from '@/lib/client/douban-auth';
-import { DoubanItem, DoubanMineItem, DoubanMineResult } from '@/lib/types';
+import {
+  BoxOfficeItem,
+  BoxOfficeResult,
+  DoubanItem,
+  DoubanMineItem,
+  DoubanMineResult,
+} from '@/lib/types';
 
 import CapsuleSwitch from '@/components/CapsuleSwitch';
 import ContinueWatching from '@/components/ContinueWatching';
@@ -33,9 +40,17 @@ const STORAGE_TYPE =
     | 'upstash'
     | undefined) || 'localstorage';
 
-type TabType = 'home' | 'wish' | 'do' | 'collect' | 'favorites';
+type TabType =
+  | 'home'
+  | 'wish'
+  | 'do'
+  | 'collect'
+  | 'globalRank'
+  | 'chinaRank'
+  | 'favorites';
 
 function HomeClient() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabType>('home');
   const [hotMovies, setHotMovies] = useState<DoubanItem[]>([]);
   const [hotTvShows, setHotTvShows] = useState<DoubanItem[]>([]);
@@ -44,6 +59,20 @@ function HomeClient() {
   const { announcement } = useSite();
 
   const [showAnnouncement, setShowAnnouncement] = useState(false);
+
+  // 票房榜数据状态
+  const [boxOfficeData, setBoxOfficeData] = useState<{
+    global: BoxOfficeItem[];
+    china: BoxOfficeItem[];
+  }>({ global: [], china: [] });
+  const [boxOfficeLoading, setBoxOfficeLoading] = useState<{
+    global: boolean;
+    china: boolean;
+  }>({ global: false, china: false });
+  const [boxOfficeError, setBoxOfficeError] = useState<{
+    global: string | null;
+    china: string | null;
+  }>({ global: null, china: null });
 
   // 豆瓣个人数据状态
   const [doubanMineData, setDoubanMineData] = useState<{
@@ -172,6 +201,44 @@ function HomeClient() {
       });
     setFavoriteItems(sorted);
   };
+
+  // 获取票房榜数据
+  const fetchBoxOffice = useCallback(
+    async (type: 'global' | 'china') => {
+      if (boxOfficeData[type].length > 0) return; // 已有数据则不重复加载
+
+      setBoxOfficeLoading((prev) => ({ ...prev, [type]: true }));
+      setBoxOfficeError((prev) => ({ ...prev, [type]: null }));
+
+      try {
+        const response = await fetch(`/api/boxoffice/${type}`);
+        const data: BoxOfficeResult = await response.json();
+
+        if (data.code === 200) {
+          setBoxOfficeData((prev) => ({ ...prev, [type]: data.list }));
+        } else {
+          setBoxOfficeError((prev) => ({
+            ...prev,
+            [type]: data.message || '获取数据失败',
+          }));
+        }
+      } catch {
+        setBoxOfficeError((prev) => ({ ...prev, [type]: '网络错误' }));
+      } finally {
+        setBoxOfficeLoading((prev) => ({ ...prev, [type]: false }));
+      }
+    },
+    [boxOfficeData]
+  );
+
+  // 当切换到票房榜 tab 时加载数据
+  useEffect(() => {
+    if (activeTab === 'globalRank') {
+      fetchBoxOffice('global');
+    } else if (activeTab === 'chinaRank') {
+      fetchBoxOffice('china');
+    }
+  }, [activeTab, fetchBoxOffice]);
 
   // 当切换到收藏夹时加载收藏数据
   useEffect(() => {
@@ -356,6 +423,8 @@ function HomeClient() {
               { label: '想看', value: 'wish' },
               { label: '在看', value: 'do' },
               { label: '看过', value: 'collect' },
+              { label: '全球', value: 'globalRank' },
+              { label: '中国', value: 'chinaRank' },
               { label: '收藏夹', value: 'favorites' },
             ]}
             active={activeTab}
@@ -375,7 +444,119 @@ function HomeClient() {
         </div>
 
         <div className='max-w-[95%] mx-auto'>
-          {activeTab === 'favorites' ? (
+          {activeTab === 'globalRank' || activeTab === 'chinaRank' ? (
+            // 票房榜视图
+            <section className='mb-8'>
+              <div className='mb-4 flex items-center justify-between'>
+                <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
+                  {activeTab === 'globalRank'
+                    ? '全球电影票房排行榜'
+                    : '中国电影票房排行榜'}
+                </h2>
+                {(activeTab === 'globalRank'
+                  ? boxOfficeData.global
+                  : boxOfficeData.china
+                ).length > 0 && (
+                  <button
+                    className='text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                    onClick={() => {
+                      const type =
+                        activeTab === 'globalRank' ? 'global' : 'china';
+                      setBoxOfficeData((prev) => ({ ...prev, [type]: [] }));
+                      fetchBoxOffice(type);
+                    }}
+                  >
+                    刷新
+                  </button>
+                )}
+              </div>
+              {(
+                activeTab === 'globalRank'
+                  ? boxOfficeLoading.global
+                  : boxOfficeLoading.china
+              ) ? (
+                <div className='space-y-2'>
+                  {Array.from({ length: 10 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className='h-12 bg-gray-200 dark:bg-gray-800 rounded animate-pulse'
+                    />
+                  ))}
+                </div>
+              ) : (
+                  activeTab === 'globalRank'
+                    ? boxOfficeError.global
+                    : boxOfficeError.china
+                ) ? (
+                <div className='text-center text-gray-500 py-8 dark:text-gray-400'>
+                  {activeTab === 'globalRank'
+                    ? boxOfficeError.global
+                    : boxOfficeError.china}
+                </div>
+              ) : (
+                <div className='space-y-1'>
+                  {(activeTab === 'globalRank'
+                    ? boxOfficeData.global
+                    : boxOfficeData.china
+                  ).map((item) => (
+                    <div
+                      key={item.rank}
+                      className='flex items-center gap-3 py-3 px-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer'
+                      onClick={() => {
+                        const searchTitle = (item.title || '').trim();
+                        if (!searchTitle) return;
+                        const params = new URLSearchParams();
+                        params.set('title', searchTitle);
+                        if (item.year) {
+                          params.set('year', item.year);
+                        }
+                        params.set('stype', 'movie');
+                        router.push(`/play?${params.toString()}`);
+                      }}
+                    >
+                      <span
+                        className={`w-8 h-8 flex items-center justify-center text-sm font-bold rounded ${
+                          item.rank <= 3
+                            ? 'bg-orange-500 text-white'
+                            : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+                        }`}
+                      >
+                        {item.rank}
+                      </span>
+                      <div className='flex-1 min-w-0'>
+                        <div className='text-sm font-medium text-gray-800 dark:text-gray-200 truncate'>
+                          {item.title}
+                        </div>
+                        <div className='text-xs text-gray-500 dark:text-gray-400'>
+                          {item.year && (
+                            <span className='mr-2'>{item.year}</span>
+                          )}
+                          {item.genre && (
+                            <span className='mr-2'>{item.genre}</span>
+                          )}
+                          {item.director && <span>{item.director}</span>}
+                        </div>
+                      </div>
+                      <span className='text-sm text-orange-500 font-medium whitespace-nowrap'>
+                        {(() => {
+                          const yi = item.grossWan / 10000;
+                          return `${yi.toFixed(2)}亿元`;
+                        })()}
+                      </span>
+                    </div>
+                  ))}
+                  {(activeTab === 'globalRank'
+                    ? boxOfficeData.global
+                    : boxOfficeData.china
+                  ).length === 0 && (
+                    <div className='text-center text-gray-500 py-8 dark:text-gray-400'>
+                      暂无数据
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
+          ) : activeTab === 'favorites' ? (
             // 收藏夹视图
             <section className='mb-8'>
               <div className='mb-4 flex items-center justify-between'>
@@ -524,7 +705,9 @@ function HomeClient() {
             // 首页视图
             <>
               {/* 继续观看 */}
-              <ContinueWatching />
+              <div className='mb-4'>
+                <ContinueWatching />
+              </div>
 
               {/* 热门电影 */}
               <section className='mb-4'>

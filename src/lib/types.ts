@@ -136,3 +136,29 @@ export interface DoubanMineResult {
   list: DoubanMineItem[];
   hasMore: boolean; // 是否有更多数据
 }
+
+export interface BoxOfficeItem {
+  rank: number;
+  title: string;
+  originalTitle?: string;
+  year?: string;
+  releaseDate?: string;
+  region: 'global' | 'china';
+  genre?: string;
+  director?: string;
+  grossWan: number;
+  grossWanText: string;
+  avgPrice?: number;
+  avgPeoplePerShow?: number;
+  movieId?: string;
+  detailUrl?: string;
+  currency: 'CNY';
+}
+
+export interface BoxOfficeResult {
+  code: number;
+  message: string;
+  yearLabel: string;
+  updateTime: string;
+  list: BoxOfficeItem[];
+}
