@@ -173,7 +173,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     }
   }, [precomputedVideoInfo]);
 
-  // 读取本地“优选和测速”开关，默认开启
+  // 读取本地“优选和测速”开关，默认关闭
   const [optimizationEnabled] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('enableOptimization');
@@ -185,7 +185,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         }
       }
     }
-    return true;
+    return false;
   });
 
   // 当切换到换源tab并且有源数据时，异步获取视频信息 - 移除 attemptedSources 依赖避免循环触发
@@ -305,7 +305,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   );
 
   return (
-    <div className='md:ml-2 px-4 py-0 h-full rounded-xl bg-black/10 dark:bg-white/5 flex flex-col border border-white/0 dark:border-white/30 overflow-hidden'>
+    <div className='md:ml-2 py-0 h-full rounded-xl bg-black/10 dark:bg-white/5 flex flex-col border border-white/0 dark:border-white/30 overflow-hidden'>
       {/* 主要的 Tab 切换 - 无缝融入设计 */}
       <div className='flex mb-1 flex-shrink-0'>
         {totalEpisodes > 1 && (

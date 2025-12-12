@@ -28,7 +28,7 @@ export const UserMenu: React.FC = () => {
   const [defaultAggregateSearch, setDefaultAggregateSearch] = useState(true);
   const [doubanProxyUrl, setDoubanProxyUrl] = useState('');
   const [imageProxyUrl, setImageProxyUrl] = useState('');
-  const [enableOptimization, setEnableOptimization] = useState(true);
+  const [enableOptimization, setEnableOptimization] = useState(false);
   const [enableImageProxy, setEnableImageProxy] = useState(false);
   const [enableDoubanProxy, setEnableDoubanProxy] = useState(false);
 
@@ -266,7 +266,7 @@ export const UserMenu: React.FC = () => {
       (window as any).RUNTIME_CONFIG?.DOUBAN_PROXY || '';
 
     setDefaultAggregateSearch(true);
-    setEnableOptimization(true);
+    setEnableOptimization(false);
     setDoubanProxyUrl(defaultDoubanProxy);
     setEnableDoubanProxy(!!defaultDoubanProxy);
     setEnableImageProxy(!!defaultImageProxy);
@@ -274,7 +274,7 @@ export const UserMenu: React.FC = () => {
 
     if (typeof window !== 'undefined') {
       localStorage.setItem('defaultAggregateSearch', JSON.stringify(true));
-      localStorage.setItem('enableOptimization', JSON.stringify(true));
+      localStorage.setItem('enableOptimization', JSON.stringify(false));
       localStorage.setItem('doubanProxyUrl', defaultDoubanProxy);
       localStorage.setItem(
         'enableDoubanProxy',

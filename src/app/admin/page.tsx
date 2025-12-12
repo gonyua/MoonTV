@@ -1624,12 +1624,12 @@ const SiteConfigComponent = ({ config }: { config: AdminConfig | null }) => {
             禁用黄色过滤器
             {isD1Storage && (
               <span className='ml-2 text-xs text-gray-500 dark:text-gray-400'>
-                (D1 环境下请通过环境变量修改)
+                (D1 环境下请通过环境变量配置可查看黄色内容的用户名)
               </span>
             )}
             {isUpstashStorage && (
               <span className='ml-2 text-xs text-gray-500 dark:text-gray-400'>
-                (Upstash 环境下请通过环境变量修改)
+                (Upstash 环境下请通过环境变量配置可查看黄色内容的用户名)
               </span>
             )}
           </label>
@@ -1664,7 +1664,9 @@ const SiteConfigComponent = ({ config }: { config: AdminConfig | null }) => {
           </button>
         </div>
         <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
-          禁用黄色内容的过滤功能，允许显示所有内容。
+          禁用黄色内容的过滤功能，允许显示所有内容。若设置环境变量
+          NEXT_PUBLIC_DISABLE_YELLOW_FILTER=a,b,c，则仅 a/b/c
+          用户可查看黄色内容。
         </p>
       </div>
 

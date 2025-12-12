@@ -194,7 +194,7 @@ src/app/api/
 
 - **关键词过滤**: `src/lib/yellow.ts` 定义敏感词列表
 - **类型名称检查**: 在搜索结果中过滤包含敏感词的内容
-- **可配置**: 通过环境变量 `NEXT_PUBLIC_DISABLE_YELLOW_FILTER=true` 关闭过滤
+- **可配置**: 通过环境变量 `NEXT_PUBLIC_DISABLE_YELLOW_FILTER=a,b,c` 配置可查看黄色内容的用户名（逗号分隔）
 
 ### 9. PWA 支持
 
@@ -230,7 +230,7 @@ NEXT_PUBLIC_ENABLE_REGISTER=false
 NEXT_PUBLIC_SEARCH_MAX_PAGE=5
 NEXT_PUBLIC_IMAGE_PROXY=图片代理前缀
 NEXT_PUBLIC_DOUBAN_PROXY=豆瓣代理前缀
-NEXT_PUBLIC_DISABLE_YELLOW_FILTER=false
+NEXT_PUBLIC_DISABLE_YELLOW_FILTER=用户名1,用户名2
 
 # 部署配置
 DOCKER_ENV=true (Docker 环境标识)

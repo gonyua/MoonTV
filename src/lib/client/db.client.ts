@@ -1390,7 +1390,7 @@ export async function getSkipConfig(
         return freshData[key] || null;
       } catch (err) {
         console.error('获取跳过片头片尾配置失败:', err);
-        triggerGlobalError('获取跳过片头片尾配置失败');
+        // triggerGlobalError('获取跳过片头片尾配置失败');
         return null;
       }
     }
@@ -1519,7 +1519,7 @@ export async function getAllSkipConfigs(): Promise<Record<string, SkipConfig>> {
         return freshData;
       } catch (err) {
         console.error('获取跳过片头片尾配置失败:', err);
-        triggerGlobalError('获取跳过片头片尾配置失败');
+        // triggerGlobalError('获取跳过片头片尾配置失败');
         return {};
       }
     }

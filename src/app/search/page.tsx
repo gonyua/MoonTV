@@ -13,7 +13,6 @@ import {
   subscribeToDataUpdates,
 } from '@/lib/client/db.client';
 import { SearchResult } from '@/lib/types';
-import { yellowWords } from '@/lib/yellow';
 
 import PageLayout from '@/components/PageLayout';
 import VideoCard from '@/components/VideoCard';
@@ -166,16 +165,7 @@ function SearchPageClient() {
         `/api/search?q=${encodeURIComponent(query.trim())}`
       );
       const data = await response.json();
-      let results = data.results;
-      if (
-        typeof window !== 'undefined' &&
-        !(window as any).RUNTIME_CONFIG?.DISABLE_YELLOW_FILTER
-      ) {
-        results = results.filter((result: SearchResult) => {
-          const typeName = result.type_name || '';
-          return !yellowWords.some((word: string) => typeName.includes(word));
-        });
-      }
+      const results: SearchResult[] = data.results || [];
       setSearchResults(
         results.sort((a: SearchResult, b: SearchResult) => {
           // 优先排序：标题与搜索词完全一致的排在前面
@@ -257,7 +247,7 @@ function SearchPageClient() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder='搜索电影、电视剧...'
-                className='w-full h-12 rounded-lg bg-gray-50/80 py-3 pl-10 pr-4 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:bg-white border border-gray-200/50 shadow-sm dark:bg-gray-800 dark:text-gray-300 dark:placeholder-gray-500 dark:focus:bg-gray-700 dark:border-gray-700'
+                className='w-full h-12 rounded-lg bg-gray-50/80 py-3 pl-10 pr-4 text-base md:text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:bg-white border border-gray-200/50 shadow-sm dark:bg-gray-800 dark:text-gray-300 dark:placeholder-gray-500 dark:focus:bg-gray-700 dark:border-gray-700'
               />
             </div>
           </form>

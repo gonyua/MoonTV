@@ -1,13 +1,14 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
+import { getAuthInfoFromCookie } from '@/lib/auth';
 import { getCacheTime, getConfig } from '@/lib/config';
 import { searchFromApi } from '@/lib/downstream';
-import { yellowWords } from '@/lib/yellow';
+import { isYellowFilterDisabledForUser, yellowWords } from '@/lib/yellow';
 
 export const runtime = 'edge';
 
 // OrionTV 兼容接口
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const query = searchParams.get('q');
   const resourceId = searchParams.get('resourceId');
@@ -27,6 +28,12 @@ export async function GET(request: Request) {
   }
 
   const config = await getConfig();
+  const authInfo = getAuthInfoFromCookie(request);
+  const username = authInfo?.username;
+  const disableYellowFilter =
+    config.SiteConfig.DisableYellowFilter ||
+    isYellowFilterDisabledForUser(username);
+
   const apiSites = config.SourceConfig.filter((site) => !site.disabled);
 
   try {
@@ -44,7 +51,7 @@ export async function GET(request: Request) {
 
     const results = await searchFromApi(targetSite, query);
     let result = results.filter((r) => r.title === query);
-    if (!config.SiteConfig.DisableYellowFilter) {
+    if (!disableYellowFilter) {
       result = result.filter((result) => {
         const typeName = result.type_name || '';
         return !yellowWords.some((word: string) => typeName.includes(word));
