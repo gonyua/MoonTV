@@ -640,6 +640,9 @@ const VideoSourceConfig = ({
   refreshConfig: () => Promise<void>;
 }) => {
   const [sources, setSources] = useState<DataSource[]>([]);
+  const [activeSourceList, setActiveSourceList] = useState<
+    'default' | 'yellow'
+  >('default');
   const [showAddForm, setShowAddForm] = useState(false);
   const [orderChanged, setOrderChanged] = useState(false);
   const [newSource, setNewSource] = useState<DataSource>({
@@ -668,12 +671,15 @@ const VideoSourceConfig = ({
 
   // 初始化
   useEffect(() => {
-    if (config?.SourceConfig) {
-      setSources(config.SourceConfig);
-      // 进入时重置 orderChanged
-      setOrderChanged(false);
-    }
-  }, [config]);
+    if (!config) return;
+    const nextSources =
+      activeSourceList === 'yellow'
+        ? config.YellowSourceConfig ?? []
+        : config.SourceConfig;
+    setSources(nextSources);
+    // 进入时重置 orderChanged
+    setOrderChanged(false);
+  }, [config, activeSourceList]);
 
   // 通用 API 请求
   const callSourceApi = async (body: Record<string, any>) => {
@@ -681,7 +687,7 @@ const VideoSourceConfig = ({
       const resp = await fetch('/api/admin/source', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...body }),
+        body: JSON.stringify({ ...body, list: activeSourceList }),
       });
 
       if (!resp.ok) {
@@ -846,9 +852,41 @@ const VideoSourceConfig = ({
     <div className='space-y-6'>
       {/* 添加视频源表单 */}
       <div className='flex items-center justify-between'>
-        <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
-          视频源列表
-        </h4>
+        <div className='flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3'>
+          <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+            视频源列表
+          </h4>
+          <div className='flex items-center gap-2'>
+            <button
+              type='button'
+              onClick={() => {
+                setActiveSourceList('default');
+                setShowAddForm(false);
+              }}
+              className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                activeSourceList === 'default'
+                  ? 'bg-orange-600 text-white'
+                  : 'bg-gray-100 text-gray-800 hover:bg-gray-200 dark:bg-gray-700/40 dark:hover:bg-gray-700/60 dark:text-gray-200'
+              }`}
+            >
+              普通用户(B)
+            </button>
+            <button
+              type='button'
+              onClick={() => {
+                setActiveSourceList('yellow');
+                setShowAddForm(false);
+              }}
+              className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                activeSourceList === 'yellow'
+                  ? 'bg-orange-600 text-white'
+                  : 'bg-gray-100 text-gray-800 hover:bg-gray-200 dark:bg-gray-700/40 dark:hover:bg-gray-700/60 dark:text-gray-200'
+              }`}
+            >
+              白名单(A)
+            </button>
+          </div>
+        </div>
         <button
           onClick={() => setShowAddForm(!showAddForm)}
           className='px-3 py-1 bg-orange-600 hover:bg-orange-700 text-white text-sm rounded-lg transition-colors'

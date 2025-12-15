@@ -14,6 +14,7 @@ type Action = 'add' | 'disable' | 'enable' | 'delete' | 'sort';
 
 interface BaseBody {
   action?: Action;
+  list?: 'default' | 'yellow';
 }
 
 export async function POST(request: NextRequest) {
@@ -30,6 +31,8 @@ export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as BaseBody & Record<string, any>;
     const { action } = body;
+    const list: 'default' | 'yellow' =
+      body.list === 'yellow' ? 'yellow' : 'default';
 
     const authInfo = getAuthInfoFromCookie(request);
     if (!authInfo || !authInfo.username) {
@@ -46,6 +49,24 @@ export async function POST(request: NextRequest) {
     // 获取配置与存储
     const adminConfig = await getConfig();
     const storage: IStorage | null = getStorage();
+
+    const getTargetList = (): typeof adminConfig.SourceConfig => {
+      if (list === 'yellow') {
+        if (!adminConfig.YellowSourceConfig) {
+          adminConfig.YellowSourceConfig = [];
+        }
+        return adminConfig.YellowSourceConfig;
+      }
+      return adminConfig.SourceConfig;
+    };
+
+    const setTargetList = (nextList: typeof adminConfig.SourceConfig) => {
+      if (list === 'yellow') {
+        adminConfig.YellowSourceConfig = nextList;
+        return;
+      }
+      adminConfig.SourceConfig = nextList;
+    };
 
     // 权限与身份校验
     if (username !== process.env.USERNAME) {
@@ -68,10 +89,11 @@ export async function POST(request: NextRequest) {
         if (!key || !name || !api) {
           return NextResponse.json({ error: '缺少必要参数' }, { status: 400 });
         }
-        if (adminConfig.SourceConfig.some((s) => s.key === key)) {
+        const targetList = getTargetList();
+        if (targetList.some((s) => s.key === key)) {
           return NextResponse.json({ error: '该源已存在' }, { status: 400 });
         }
-        adminConfig.SourceConfig.push({
+        targetList.push({
           key,
           name,
           api,
@@ -85,7 +107,7 @@ export async function POST(request: NextRequest) {
         const { key } = body as { key?: string };
         if (!key)
           return NextResponse.json({ error: '缺少 key 参数' }, { status: 400 });
-        const entry = adminConfig.SourceConfig.find((s) => s.key === key);
+        const entry = getTargetList().find((s) => s.key === key);
         if (!entry)
           return NextResponse.json({ error: '源不存在' }, { status: 404 });
         entry.disabled = true;
@@ -95,7 +117,7 @@ export async function POST(request: NextRequest) {
         const { key } = body as { key?: string };
         if (!key)
           return NextResponse.json({ error: '缺少 key 参数' }, { status: 400 });
-        const entry = adminConfig.SourceConfig.find((s) => s.key === key);
+        const entry = getTargetList().find((s) => s.key === key);
         if (!entry)
           return NextResponse.json({ error: '源不存在' }, { status: 404 });
         entry.disabled = false;
@@ -105,14 +127,15 @@ export async function POST(request: NextRequest) {
         const { key } = body as { key?: string };
         if (!key)
           return NextResponse.json({ error: '缺少 key 参数' }, { status: 400 });
-        const idx = adminConfig.SourceConfig.findIndex((s) => s.key === key);
+        const targetList = getTargetList();
+        const idx = targetList.findIndex((s) => s.key === key);
         if (idx === -1)
           return NextResponse.json({ error: '源不存在' }, { status: 404 });
-        const entry = adminConfig.SourceConfig[idx];
+        const entry = targetList[idx];
         if (entry.from === 'config') {
           return NextResponse.json({ error: '该源不可删除' }, { status: 400 });
         }
-        adminConfig.SourceConfig.splice(idx, 1);
+        targetList.splice(idx, 1);
         break;
       }
       case 'sort': {
@@ -123,7 +146,8 @@ export async function POST(request: NextRequest) {
             { status: 400 }
           );
         }
-        const map = new Map(adminConfig.SourceConfig.map((s) => [s.key, s]));
+        const targetList = getTargetList();
+        const map = new Map(targetList.map((s) => [s.key, s]));
         const newList: typeof adminConfig.SourceConfig = [];
         order.forEach((k) => {
           const item = map.get(k);
@@ -133,10 +157,10 @@ export async function POST(request: NextRequest) {
           }
         });
         // 未在 order 中的保持原顺序
-        adminConfig.SourceConfig.forEach((item) => {
+        targetList.forEach((item) => {
           if (map.has(item.key)) newList.push(item);
         });
-        adminConfig.SourceConfig = newList;
+        setTargetList(newList);
         break;
       }
       default:

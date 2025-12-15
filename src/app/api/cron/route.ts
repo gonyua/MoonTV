@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { fetchVideoDetail } from '@/lib/fetchVideoDetail';
 import { db } from '@/lib/server/db';
 import { SearchResult } from '@/lib/types';
+import { isYellowFilterDisabledForUser } from '@/lib/yellow';
 
 export const runtime = 'edge';
 
@@ -53,17 +54,22 @@ async function refreshRecordAndFavorites() {
 
     // 获取详情 Promise（带缓存和错误处理）
     const getDetail = async (
+      username: string,
       source: string,
       id: string,
       fallbackTitle: string
     ): Promise<SearchResult | null> => {
-      const key = `${source}+${id}`;
+      const listKey = isYellowFilterDisabledForUser(username)
+        ? 'yellow'
+        : 'default';
+      const key = `${listKey}:${source}+${id}`;
       let promise = detailCache.get(key);
       if (!promise) {
         promise = fetchVideoDetail({
           source,
           id,
           fallbackTitle: fallbackTitle.trim(),
+          username,
         })
           .then((detail) => {
             // 成功时才缓存结果
@@ -96,7 +102,7 @@ async function refreshRecordAndFavorites() {
               continue;
             }
 
-            const detail = await getDetail(source, id, record.title);
+            const detail = await getDetail(user, source, id, record.title);
             if (!detail) {
               console.warn(`跳过无法获取详情的播放记录: ${key}`);
               continue;
@@ -147,7 +153,7 @@ async function refreshRecordAndFavorites() {
               continue;
             }
 
-            const favDetail = await getDetail(source, id, fav.title);
+            const favDetail = await getDetail(user, source, id, fav.title);
             if (!favDetail) {
               console.warn(`跳过无法获取详情的收藏: ${key}`);
               continue;

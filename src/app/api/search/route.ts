@@ -30,7 +30,10 @@ export async function GET(request: NextRequest) {
   const username = authInfo?.username;
   const canViewYellow = isYellowFilterDisabledForUser(username);
 
-  const apiSites = config.SourceConfig.filter((site) => !site.disabled);
+  const sourceList = canViewYellow
+    ? config.YellowSourceConfig ?? []
+    : config.SourceConfig;
+  const apiSites = sourceList.filter((site) => !site.disabled);
   const searchPromises = apiSites.map((site) => searchFromApi(site, query));
 
   try {

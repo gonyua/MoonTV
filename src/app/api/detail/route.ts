@@ -1,11 +1,13 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
-import { getAvailableApiSites, getCacheTime } from '@/lib/config';
+import { getAuthInfoFromCookie } from '@/lib/auth';
+import { getAvailableApiSitesForUser, getCacheTime } from '@/lib/config';
 import { getDetailFromApi } from '@/lib/downstream';
+import { isYellowFilterDisabledForUser } from '@/lib/yellow';
 
 export const runtime = 'edge';
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
   const sourceCode = searchParams.get('source');
@@ -19,7 +21,11 @@ export async function GET(request: Request) {
   }
 
   try {
-    const apiSites = await getAvailableApiSites();
+    const authInfo = getAuthInfoFromCookie(request);
+    const username = authInfo?.username;
+    const canViewYellow = isYellowFilterDisabledForUser(username);
+
+    const apiSites = await getAvailableApiSitesForUser(username);
     const apiSite = apiSites.find((site) => site.key === sourceCode);
 
     if (!apiSite) {
@@ -31,9 +37,16 @@ export async function GET(request: Request) {
 
     return NextResponse.json(result, {
       headers: {
-        'Cache-Control': `public, max-age=${cacheTime}, s-maxage=${cacheTime}`,
-        'CDN-Cache-Control': `public, s-maxage=${cacheTime}`,
-        'Vercel-CDN-Cache-Control': `public, s-maxage=${cacheTime}`,
+        ...(canViewYellow
+          ? {
+              'Cache-Control': 'private, no-store',
+              Vary: 'Cookie',
+            }
+          : {
+              'Cache-Control': `public, max-age=${cacheTime}, s-maxage=${cacheTime}`,
+              'CDN-Cache-Control': `public, s-maxage=${cacheTime}`,
+              'Vercel-CDN-Cache-Control': `public, s-maxage=${cacheTime}`,
+            }),
       },
     });
   } catch (error) {

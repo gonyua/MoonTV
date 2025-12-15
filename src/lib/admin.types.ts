@@ -23,6 +23,14 @@ export interface AdminConfig {
     from: 'config' | 'custom';
     disabled?: boolean;
   }[];
+  YellowSourceConfig?: {
+    key: string;
+    name: string;
+    api: string;
+    detail?: string;
+    from: 'config' | 'custom';
+    disabled?: boolean;
+  }[];
   CustomCategories: {
     name?: string;
     type: 'movie' | 'tv';

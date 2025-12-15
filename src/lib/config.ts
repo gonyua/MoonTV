@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, no-console, @typescript-eslint/no-non-null-assertion */
 
 import { getStorage } from '@/lib/server/db';
+import { isYellowFilterDisabledForUser } from '@/lib/yellow';
 
 import { AdminConfig } from './admin.types';
 import runtimeConfig from './runtime';
@@ -47,6 +48,8 @@ export const API_CONFIG = {
 // 在模块加载时根据环境决定配置来源
 let fileConfig: ConfigFileStruct;
 let cachedConfig: AdminConfig;
+
+type SourceConfigItem = AdminConfig['SourceConfig'][number];
 
 async function initConfig() {
   if (cachedConfig) {
@@ -100,13 +103,14 @@ async function initConfig() {
         );
 
         apiSiteEntries.forEach(([key, site]) => {
+          const existing = sourceConfigMap.get(key);
           sourceConfigMap.set(key, {
             key,
             name: site.name,
             api: site.api,
             detail: site.detail,
             from: 'config',
-            disabled: false,
+            disabled: existing?.disabled ?? false,
           });
         });
 
@@ -120,6 +124,29 @@ async function initConfig() {
             source.from = 'custom';
           }
         });
+
+        // 同步 YellowSourceConfig
+        if (adminConfig.YellowSourceConfig) {
+          const yellowSourceConfigMap = new Map(
+            adminConfig.YellowSourceConfig.map((s) => [s.key, s])
+          );
+          apiSiteEntries.forEach(([key, site]) => {
+            const existing = yellowSourceConfigMap.get(key);
+            if (!existing) return;
+            existing.name = site.name;
+            existing.api = site.api;
+            existing.detail = site.detail;
+            existing.from = 'config';
+          });
+          yellowSourceConfigMap.forEach((source) => {
+            if (!apiSiteKeys.has(source.key)) {
+              source.from = 'custom';
+            }
+          });
+          adminConfig.YellowSourceConfig = Array.from(
+            yellowSourceConfigMap.values()
+          );
+        }
 
         // 确保 CustomCategories 被初始化
         if (!adminConfig.CustomCategories) {
@@ -272,6 +299,67 @@ async function initConfig() {
   }
 }
 
+function mergeFileSourcesIntoList(
+  list: SourceConfigItem[],
+  apiSiteEntries: Array<[string, ApiSite]>
+): SourceConfigItem[] {
+  const sourceConfigMap = new Map(list.map((s) => [s.key, s]));
+
+  apiSiteEntries.forEach(([key, site]) => {
+    const existingSource = sourceConfigMap.get(key);
+    if (existingSource) {
+      existingSource.name = site.name;
+      existingSource.api = site.api;
+      existingSource.detail = site.detail;
+      existingSource.from = 'config';
+    } else {
+      sourceConfigMap.set(key, {
+        key,
+        name: site.name,
+        api: site.api,
+        detail: site.detail,
+        from: 'config',
+        disabled: false,
+      });
+    }
+  });
+
+  // 检查现有源是否在 fileConfig.api_site 中，如果不在则标记为 custom
+  const apiSiteKeys = new Set(apiSiteEntries.map(([key]) => key));
+  sourceConfigMap.forEach((source) => {
+    if (!apiSiteKeys.has(source.key)) {
+      source.from = 'custom';
+    }
+  });
+
+  return Array.from(sourceConfigMap.values());
+}
+
+function syncFileSourcesIntoExistingList(
+  list: SourceConfigItem[],
+  apiSiteEntries: Array<[string, ApiSite]>
+): SourceConfigItem[] {
+  const apiSiteMap = new Map(apiSiteEntries);
+  const apiSiteKeys = new Set(apiSiteEntries.map(([key]) => key));
+
+  return list.map((source) => {
+    const site = apiSiteMap.get(source.key);
+    if (site) {
+      return {
+        ...source,
+        name: site.name,
+        api: site.api,
+        detail: site.detail,
+        from: 'config',
+      };
+    }
+    if (!apiSiteKeys.has(source.key)) {
+      return { ...source, from: 'custom' };
+    }
+    return source;
+  });
+}
+
 export async function getConfig(): Promise<AdminConfig> {
   const storageType = process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage';
   if (process.env.DOCKER_ENV === 'true' || storageType === 'localstorage') {
@@ -305,41 +393,16 @@ export async function getConfig(): Promise<AdminConfig> {
     // 合并文件中的源信息
     fileConfig = runtimeConfig as unknown as ConfigFileStruct;
     const apiSiteEntries = Object.entries(fileConfig.api_site);
-    const sourceConfigMap = new Map(
-      (adminConfig.SourceConfig || []).map((s) => [s.key, s])
+    adminConfig.SourceConfig = mergeFileSourcesIntoList(
+      adminConfig.SourceConfig || [],
+      apiSiteEntries
     );
-
-    apiSiteEntries.forEach(([key, site]) => {
-      const existingSource = sourceConfigMap.get(key);
-      if (existingSource) {
-        // 如果已存在，只覆盖 name、api、detail 和 from
-        existingSource.name = site.name;
-        existingSource.api = site.api;
-        existingSource.detail = site.detail;
-        existingSource.from = 'config';
-      } else {
-        // 如果不存在，创建新条目
-        sourceConfigMap.set(key, {
-          key,
-          name: site.name,
-          api: site.api,
-          detail: site.detail,
-          from: 'config',
-          disabled: false,
-        });
-      }
-    });
-
-    // 检查现有源是否在 fileConfig.api_site 中，如果不在则标记为 custom
-    const apiSiteKeys = new Set(apiSiteEntries.map(([key]) => key));
-    sourceConfigMap.forEach((source) => {
-      if (!apiSiteKeys.has(source.key)) {
-        source.from = 'custom';
-      }
-    });
-
-    // 将 Map 转换回数组
-    adminConfig.SourceConfig = Array.from(sourceConfigMap.values());
+    if (adminConfig.YellowSourceConfig) {
+      adminConfig.YellowSourceConfig = syncFileSourcesIntoExistingList(
+        adminConfig.YellowSourceConfig,
+        apiSiteEntries
+      );
+    }
 
     // 覆盖 CustomCategories
     const customCategories = fileConfig.custom_category || [];
@@ -467,6 +530,7 @@ export async function resetConfig() {
   cachedConfig.SiteConfig = adminConfig.SiteConfig;
   cachedConfig.UserConfig = adminConfig.UserConfig;
   cachedConfig.SourceConfig = adminConfig.SourceConfig;
+  cachedConfig.YellowSourceConfig = adminConfig.YellowSourceConfig;
   cachedConfig.CustomCategories = adminConfig.CustomCategories;
 }
 
@@ -476,11 +540,24 @@ export async function getCacheTime(): Promise<number> {
 }
 
 export async function getAvailableApiSites(): Promise<ApiSite[]> {
+  return getAvailableApiSitesForUser(null);
+}
+
+export async function getAvailableApiSitesForUser(
+  username?: string | null
+): Promise<ApiSite[]> {
   const config = await getConfig();
-  return config.SourceConfig.filter((s) => !s.disabled).map((s) => ({
-    key: s.key,
-    name: s.name,
-    api: s.api,
-    detail: s.detail,
-  }));
+  const useYellowList = isYellowFilterDisabledForUser(username);
+  const list = useYellowList
+    ? config.YellowSourceConfig ?? []
+    : config.SourceConfig;
+
+  return list
+    .filter((s) => !s.disabled)
+    .map((s) => ({
+      key: s.key,
+      name: s.name,
+      api: s.api,
+      detail: s.detail,
+    }));
 }

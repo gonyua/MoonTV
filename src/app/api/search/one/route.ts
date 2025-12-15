@@ -32,7 +32,10 @@ export async function GET(request: NextRequest) {
   const username = authInfo?.username;
   const canViewYellow = isYellowFilterDisabledForUser(username);
 
-  const apiSites = config.SourceConfig.filter((site) => !site.disabled);
+  const sourceList = canViewYellow
+    ? config.YellowSourceConfig ?? []
+    : config.SourceConfig;
+  const apiSites = sourceList.filter((site) => !site.disabled);
 
   try {
     // 根据 resourceId 查找对应的 API 站点
