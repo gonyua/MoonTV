@@ -201,7 +201,6 @@ async function initConfig() {
             SiteInterfaceCacheTime: fileConfig.cache_time || 7200,
             ImageProxy: process.env.NEXT_PUBLIC_IMAGE_PROXY || '',
             DoubanProxy: process.env.NEXT_PUBLIC_DOUBAN_PROXY || '',
-            DisableYellowFilter: false,
           },
           UserConfig: {
             AllowRegister: process.env.NEXT_PUBLIC_ENABLE_REGISTER === 'true',
@@ -248,7 +247,6 @@ async function initConfig() {
         SiteInterfaceCacheTime: fileConfig.cache_time || 7200,
         ImageProxy: process.env.NEXT_PUBLIC_IMAGE_PROXY || '',
         DoubanProxy: process.env.NEXT_PUBLIC_DOUBAN_PROXY || '',
-        DisableYellowFilter: false,
       },
       UserConfig: {
         AllowRegister: process.env.NEXT_PUBLIC_ENABLE_REGISTER === 'true',
@@ -434,7 +432,6 @@ export async function resetConfig() {
       SiteInterfaceCacheTime: fileConfig.cache_time || 7200,
       ImageProxy: process.env.NEXT_PUBLIC_IMAGE_PROXY || '',
       DoubanProxy: process.env.NEXT_PUBLIC_DOUBAN_PROXY || '',
-      DisableYellowFilter: false,
     },
     UserConfig: {
       AllowRegister: process.env.NEXT_PUBLIC_ENABLE_REGISTER === 'true',

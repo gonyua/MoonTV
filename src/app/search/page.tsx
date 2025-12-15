@@ -165,7 +165,7 @@ function SearchPageClient() {
         `/api/search?q=${encodeURIComponent(query.trim())}`
       );
       const data = await response.json();
-      const results: SearchResult[] = data.results || [];
+      const results = data.results;
       setSearchResults(
         results.sort((a: SearchResult, b: SearchResult) => {
           // 优先排序：标题与搜索词完全一致的排在前面

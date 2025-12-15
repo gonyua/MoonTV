@@ -30,9 +30,7 @@ export async function GET(request: NextRequest) {
   const config = await getConfig();
   const authInfo = getAuthInfoFromCookie(request);
   const username = authInfo?.username;
-  const disableYellowFilter =
-    config.SiteConfig.DisableYellowFilter ||
-    isYellowFilterDisabledForUser(username);
+  const canViewYellow = isYellowFilterDisabledForUser(username);
 
   const apiSites = config.SourceConfig.filter((site) => !site.disabled);
 
@@ -51,7 +49,7 @@ export async function GET(request: NextRequest) {
 
     const results = await searchFromApi(targetSite, query);
     let result = results.filter((r) => r.title === query);
-    if (!disableYellowFilter) {
+    if (!canViewYellow) {
       result = result.filter((result) => {
         const typeName = result.type_name || '';
         return !yellowWords.some((word: string) => typeName.includes(word));
@@ -72,9 +70,16 @@ export async function GET(request: NextRequest) {
         { results: result },
         {
           headers: {
-            'Cache-Control': `public, max-age=${cacheTime}, s-maxage=${cacheTime}`,
-            'CDN-Cache-Control': `public, s-maxage=${cacheTime}`,
-            'Vercel-CDN-Cache-Control': `public, s-maxage=${cacheTime}`,
+            ...(canViewYellow
+              ? {
+                  'Cache-Control': 'private, no-store',
+                  Vary: 'Cookie',
+                }
+              : {
+                  'Cache-Control': `public, max-age=${cacheTime}, s-maxage=${cacheTime}`,
+                  'CDN-Cache-Control': `public, s-maxage=${cacheTime}`,
+                  'Vercel-CDN-Cache-Control': `public, s-maxage=${cacheTime}`,
+                }),
           },
         }
       );

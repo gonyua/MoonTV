@@ -26,7 +26,7 @@
 `downstream.ts` │ 搜索时并行请求多个视频源站点
 `types.ts` │ TypeScript 类型定义
 `utils.ts` │ 通用工具函数
-`yellow.ts` │ 黄色内容过滤关键词
+`yellow.ts` │ 成人内容过滤关键词
 
 ──────────────────────────────────────────
 

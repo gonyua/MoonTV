@@ -221,7 +221,7 @@ networks:
 | NEXT_PUBLIC_SEARCH_MAX_PAGE       | 搜索接口可拉取的最大页数                     | 1-50                             | 5                                                                                                                          |
 | NEXT_PUBLIC_IMAGE_PROXY           | 默认的浏览器端图片代理                       | url prefix                       | (空)                                                                                                                       |
 | NEXT_PUBLIC_DOUBAN_PROXY          | 默认的浏览器端豆瓣数据代理                   | url prefix                       | (空)                                                                                                                       |
-| NEXT_PUBLIC_DISABLE_YELLOW_FILTER | 配置可查看黄色内容的用户名（逗号分隔）       | 逗号分隔用户名列表               | 空                                                                                                                         |
+| NEXT_PUBLIC_DISABLE_YELLOW_FILTER | 配置可查看成人内容的用户名（逗号分隔）       | 逗号分隔用户名列表               | 空                                                                                                                         |
 
 ## 配置说明
 

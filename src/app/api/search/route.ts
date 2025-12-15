@@ -28,9 +28,7 @@ export async function GET(request: NextRequest) {
   const config = await getConfig();
   const authInfo = getAuthInfoFromCookie(request);
   const username = authInfo?.username;
-  const disableYellowFilter =
-    config.SiteConfig.DisableYellowFilter ||
-    isYellowFilterDisabledForUser(username);
+  const canViewYellow = isYellowFilterDisabledForUser(username);
 
   const apiSites = config.SourceConfig.filter((site) => !site.disabled);
   const searchPromises = apiSites.map((site) => searchFromApi(site, query));
@@ -38,7 +36,7 @@ export async function GET(request: NextRequest) {
   try {
     const results = await Promise.all(searchPromises);
     let flattenedResults = results.flat();
-    if (!disableYellowFilter) {
+    if (!canViewYellow) {
       flattenedResults = flattenedResults.filter((result) => {
         const typeName = result.type_name || '';
         return !yellowWords.some((word: string) => typeName.includes(word));
@@ -50,9 +48,16 @@ export async function GET(request: NextRequest) {
       { results: flattenedResults },
       {
         headers: {
-          'Cache-Control': `public, max-age=${cacheTime}, s-maxage=${cacheTime}`,
-          'CDN-Cache-Control': `public, s-maxage=${cacheTime}`,
-          'Vercel-CDN-Cache-Control': `public, s-maxage=${cacheTime}`,
+          ...(canViewYellow
+            ? {
+                'Cache-Control': 'private, no-store',
+                Vary: 'Cookie',
+              }
+            : {
+                'Cache-Control': `public, max-age=${cacheTime}, s-maxage=${cacheTime}`,
+                'CDN-Cache-Control': `public, s-maxage=${cacheTime}`,
+                'Vercel-CDN-Cache-Control': `public, s-maxage=${cacheTime}`,
+              }),
         },
       }
     );

@@ -190,11 +190,11 @@ src/app/api/
 - 电影分类: `/douban?type=movie`
 - 电视剧分类: `/douban?type=tv`
 
-### 8. 黄色内容过滤
+### 8. 成人内容过滤
 
 - **关键词过滤**: `src/lib/yellow.ts` 定义敏感词列表
 - **类型名称检查**: 在搜索结果中过滤包含敏感词的内容
-- **可配置**: 通过环境变量 `NEXT_PUBLIC_DISABLE_YELLOW_FILTER=a,b,c` 配置可查看黄色内容的用户名（逗号分隔）
+- **可配置**: 通过环境变量 `NEXT_PUBLIC_DISABLE_YELLOW_FILTER=a,b,c` 配置可查看成人内容的用户名（逗号分隔）
 
 ### 9. PWA 支持
 
