@@ -110,6 +110,15 @@ async function refreshRecordAndFavorites() {
 
             const episodeCount = detail.episodes?.length || 0;
             if (episodeCount > 0 && episodeCount !== record.total_episodes) {
+              const normalizedDetailDoubanId =
+                typeof detail.douban_id === 'number' && detail.douban_id > 0
+                  ? detail.douban_id
+                  : undefined;
+              const normalizedRecordDoubanId =
+                typeof record.douban_id === 'number' && record.douban_id > 0
+                  ? record.douban_id
+                  : undefined;
+
               await db.savePlayRecord(user, source, id, {
                 title: detail.title || record.title,
                 source_name: record.source_name,
@@ -121,6 +130,7 @@ async function refreshRecordAndFavorites() {
                 total_time: record.total_time,
                 save_time: record.save_time,
                 search_title: record.search_title,
+                douban_id: normalizedDetailDoubanId ?? normalizedRecordDoubanId,
               });
               console.log(
                 `更新播放记录: ${record.title} (${record.total_episodes} -> ${episodeCount})`

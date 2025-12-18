@@ -65,6 +65,7 @@ export class D1Storage implements IStorage {
         .first<any>();
 
       if (!result) return null;
+      const doubanId = Number(result.douban_id);
 
       return {
         title: result.title,
@@ -77,6 +78,8 @@ export class D1Storage implements IStorage {
         total_time: result.total_time,
         save_time: result.save_time,
         search_title: result.search_title || undefined,
+        douban_id:
+          Number.isFinite(doubanId) && doubanId > 0 ? doubanId : undefined,
       };
     } catch (err) {
       console.error('Failed to get play record:', err);
@@ -91,12 +94,16 @@ export class D1Storage implements IStorage {
   ): Promise<void> {
     try {
       const db = await this.getDatabase();
+      const doubanId =
+        Number.isFinite(record.douban_id) && (record.douban_id as number) > 0
+          ? (record.douban_id as number)
+          : null;
       await db
         .prepare(
           `
           INSERT OR REPLACE INTO play_records 
-          (username, key, title, source_name, cover, year, index_episode, total_episodes, play_time, total_time, save_time, search_title)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (username, key, title, source_name, cover, year, index_episode, total_episodes, play_time, total_time, save_time, search_title, douban_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
         )
         .bind(
@@ -111,7 +118,8 @@ export class D1Storage implements IStorage {
           record.play_time,
           record.total_time,
           record.save_time,
-          record.search_title || null
+          record.search_title || null,
+          doubanId
         )
         .run();
     } catch (err) {
@@ -135,6 +143,7 @@ export class D1Storage implements IStorage {
       const records: Record<string, PlayRecord> = {};
 
       result.results.forEach((row: any) => {
+        const doubanId = Number(row.douban_id);
         records[row.key] = {
           title: row.title,
           source_name: row.source_name,
@@ -146,6 +155,8 @@ export class D1Storage implements IStorage {
           total_time: row.total_time,
           save_time: row.save_time,
           search_title: row.search_title || undefined,
+          douban_id:
+            Number.isFinite(doubanId) && doubanId > 0 ? doubanId : undefined,
         };
       });
 

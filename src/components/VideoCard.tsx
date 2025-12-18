@@ -1,9 +1,24 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { CheckCircle, Heart, Link, PlayCircleIcon } from 'lucide-react';
+import {
+  BookmarkPlus,
+  CheckCircle,
+  CheckCircle2,
+  Heart,
+  Link,
+  Loader2,
+  PlayCircleIcon,
+  Trash2,
+} from 'lucide-react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import {
   deleteFavorite,
@@ -13,10 +28,13 @@ import {
   saveFavorite,
   subscribeToDataUpdates,
 } from '@/lib/client/db.client';
+import { getDoubanCookie } from '@/lib/client/douban-auth';
 import { SearchResult } from '@/lib/types';
 import { processImageUrl } from '@/lib/utils';
 
 import { ImagePlaceholder } from '@/components/ImagePlaceholder';
+
+type DoubanMarkAction = 'wish' | 'collect' | 'remove';
 
 interface VideoCardProps {
   id?: string;
@@ -35,6 +53,9 @@ interface VideoCardProps {
   rate?: string;
   items?: SearchResult[];
   type?: string;
+  doubanMarkActions?: readonly DoubanMarkAction[];
+  onDoubanMarkNeedLogin?: () => void;
+  onDoubanMarkSuccess?: (action: DoubanMarkAction, subjectId: string) => void;
 }
 
 export default function VideoCard({
@@ -54,10 +75,16 @@ export default function VideoCard({
   rate,
   items,
   type = '',
+  doubanMarkActions,
+  onDoubanMarkNeedLogin,
+  onDoubanMarkSuccess,
 }: VideoCardProps) {
   const router = useRouter();
+  const isMountedRef = useRef(true);
   const [favorited, setFavorited] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [doubanMarkLoading, setDoubanMarkLoading] =
+    useState<DoubanMarkAction | null>(null);
 
   const isAggregate = from === 'search' && !!items?.length;
 
@@ -100,9 +127,13 @@ export default function VideoCard({
   const actualPoster = aggregateData?.first.poster ?? poster;
   const actualSource = aggregateData?.first.source ?? source;
   const actualId = aggregateData?.first.id ?? id;
-  const actualDoubanId = String(
-    aggregateData?.mostFrequentDoubanId ?? douban_id
-  );
+  const actualDoubanIdRaw = aggregateData?.mostFrequentDoubanId ?? douban_id;
+  const actualDoubanId =
+    actualDoubanIdRaw !== null &&
+    actualDoubanIdRaw !== undefined &&
+    String(actualDoubanIdRaw) !== '0'
+      ? String(actualDoubanIdRaw)
+      : undefined;
   const actualEpisodes = aggregateData?.mostFrequentEpisodes ?? episodes;
   const actualYear = aggregateData?.first.year ?? year;
   const actualQuery = query || '';
@@ -140,6 +171,19 @@ export default function VideoCard({
 
     return unsubscribe;
   }, [from, actualSource, actualId]);
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const showToast = useCallback((message: string, durationMs?: number) => {
+    if (typeof window === 'undefined') return;
+    window.dispatchEvent(
+      new CustomEvent('moon:toast', { detail: { message, durationMs } })
+    );
+  }, []);
 
   const handleToggleFavorite = useCallback(
     async (e: React.MouseEvent) => {
@@ -200,7 +244,11 @@ export default function VideoCard({
       router.push(
         `/play?title=${encodeURIComponent(actualTitle.trim())}${
           actualYear ? `&year=${actualYear}` : ''
-        }${actualSearchType ? `&stype=${actualSearchType}` : ''}`
+        }${actualSearchType ? `&stype=${actualSearchType}` : ''}${
+          actualDoubanId
+            ? `&douban_id=${encodeURIComponent(actualDoubanId)}`
+            : ''
+        }`
       );
     } else if (actualSource && actualId) {
       router.push(
@@ -210,7 +258,11 @@ export default function VideoCard({
           isAggregate ? '&prefer=true' : ''
         }${
           actualQuery ? `&stitle=${encodeURIComponent(actualQuery.trim())}` : ''
-        }${actualSearchType ? `&stype=${actualSearchType}` : ''}`
+        }${actualSearchType ? `&stype=${actualSearchType}` : ''}${
+          actualDoubanId
+            ? `&douban_id=${encodeURIComponent(actualDoubanId)}`
+            : ''
+        }`
       );
     }
   }, [
@@ -223,6 +275,7 @@ export default function VideoCard({
     isAggregate,
     actualQuery,
     actualSearchType,
+    actualDoubanId,
   ]);
 
   const config = useMemo(() => {
@@ -233,7 +286,7 @@ export default function VideoCard({
         showPlayButton: true,
         showHeart: true,
         showCheckCircle: true,
-        showDoubanLink: false,
+        showDoubanLink: !!actualDoubanId,
         showRating: false,
       },
       favorite: {
@@ -266,6 +319,117 @@ export default function VideoCard({
     };
     return configs[from] || configs.search;
   }, [from, isAggregate, actualDoubanId, rate]);
+
+  const isD1Storage = useMemo(() => {
+    if (typeof window === 'undefined') {
+      return process.env.NEXT_PUBLIC_STORAGE_TYPE === 'd1';
+    }
+
+    const runtimeStorageType = (
+      window as Window & {
+        RUNTIME_CONFIG?: { STORAGE_TYPE?: string };
+      }
+    ).RUNTIME_CONFIG?.STORAGE_TYPE;
+
+    const storageType =
+      runtimeStorageType ||
+      (process.env.NEXT_PUBLIC_STORAGE_TYPE as string | undefined) ||
+      'localstorage';
+
+    return storageType === 'd1';
+  }, []);
+
+  const showDoubanMarkActions = !!doubanMarkActions?.length;
+
+  const callDoubanMark = useCallback(
+    async (action: DoubanMarkAction) => {
+      if (!actualDoubanId) {
+        showToast('暂无豆瓣ID，无法标记', 2600);
+        return;
+      }
+      if (doubanMarkLoading) return;
+
+      type MarkResponse = {
+        code: number;
+        message: string;
+        data?: { subjectId?: string; interest?: string } | null;
+        details?: unknown;
+      };
+
+      const body: { subjectId: string; cookie?: string } = {
+        subjectId: actualDoubanId,
+      };
+
+      if (!isD1Storage) {
+        const cookie = getDoubanCookie();
+        if (!cookie) {
+          showToast('请先登录豆瓣账号', 2600);
+          onDoubanMarkNeedLogin?.();
+          return;
+        }
+        body.cookie = cookie;
+      }
+
+      if (isMountedRef.current) setDoubanMarkLoading(action);
+      try {
+        const response = await fetch(`/api/douban/mark/${action}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+
+        const data = (await response
+          .json()
+          .catch(() => null)) as MarkResponse | null;
+
+        const code = data?.code ?? response.status;
+        const message = data?.message || `请求失败: ${response.status}`;
+
+        if (code === 401 || code === 403) {
+          showToast(message || '请先登录豆瓣账号', 2800);
+          onDoubanMarkNeedLogin?.();
+          return;
+        }
+
+        if (!response.ok || code !== 200) {
+          showToast(message, 3000);
+          return;
+        }
+
+        const actionText =
+          action === 'wish'
+            ? '已标记为想看'
+            : action === 'collect'
+            ? '已标记为看过'
+            : '已移除';
+        showToast(`${actionText}：${actualTitle}`, 2400);
+        onDoubanMarkSuccess?.(action, actualDoubanId);
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : 'Unknown error';
+        showToast(`请求失败: ${msg}`, 3000);
+      } finally {
+        if (isMountedRef.current) setDoubanMarkLoading(null);
+      }
+    },
+    [
+      actualDoubanId,
+      actualTitle,
+      doubanMarkLoading,
+      isD1Storage,
+      onDoubanMarkNeedLogin,
+      onDoubanMarkSuccess,
+      showToast,
+    ]
+  );
+
+  const handleDoubanMarkClick = useCallback(
+    (action: DoubanMarkAction) => async (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      await callDoubanMark(action);
+    },
+    [callDoubanMark]
+  );
 
   return (
     <div
@@ -301,32 +465,102 @@ export default function VideoCard({
         )}
 
         {/* 操作按钮 */}
-        {(config.showHeart || config.showCheckCircle) && (
-          <div className='absolute bottom-3 right-3 flex gap-3 opacity-0 translate-y-2 transition-all duration-300 ease-in-out group-hover:opacity-100 group-hover:translate-y-0'>
+        {(config.showHeart ||
+          config.showCheckCircle ||
+          showDoubanMarkActions) && (
+          <div className='absolute bottom-2 right-2 flex gap-2 opacity-0 translate-y-2 transition-all duration-300 ease-in-out group-hover:opacity-100 group-hover:translate-y-0 sm:bottom-3 sm:right-3 sm:gap-3'>
             {config.showCheckCircle && (
               <CheckCircle
                 onClick={handleDeleteRecord}
-                size={20}
-                className='text-white transition-all duration-300 ease-out hover:stroke-orange-500 hover:scale-[1.1]'
+                className='h-4 w-4 text-white transition-all duration-300 ease-out hover:stroke-orange-500 hover:scale-[1.1] sm:h-5 sm:w-5'
               />
             )}
             {config.showHeart && (
               <Heart
                 onClick={handleToggleFavorite}
-                size={20}
                 className={`transition-all duration-300 ease-out ${
                   favorited
                     ? 'fill-red-600 stroke-red-600'
                     : 'fill-transparent stroke-white hover:stroke-red-400'
-                } hover:scale-[1.1]`}
+                } h-4 w-4 hover:scale-[1.1] sm:h-5 sm:w-5`}
               />
             )}
+            {showDoubanMarkActions &&
+              doubanMarkActions?.map((action) => {
+                const isBusy = doubanMarkLoading !== null;
+                const commonClass =
+                  'h-4 w-4 text-white transition-all duration-300 ease-out hover:stroke-orange-500 hover:scale-[1.1] sm:h-5 sm:w-5';
+                const busyClass = isBusy
+                  ? 'opacity-50 pointer-events-none'
+                  : '';
+                const isThisLoading = doubanMarkLoading === action;
+                const isEnabled = Boolean(actualDoubanId);
+                const disabledClass = !isEnabled ? 'opacity-40' : '';
+
+                if (action === 'wish') {
+                  if (isThisLoading) {
+                    return (
+                      <Loader2
+                        key={action}
+                        className={`${commonClass} ${busyClass} animate-spin`}
+                        aria-label='想看处理中'
+                      />
+                    );
+                  }
+                  return (
+                    <BookmarkPlus
+                      key={action}
+                      onClick={handleDoubanMarkClick(action)}
+                      className={`${commonClass} ${busyClass} ${disabledClass}`}
+                      aria-label='想看'
+                    />
+                  );
+                }
+
+                if (action === 'collect') {
+                  if (isThisLoading) {
+                    return (
+                      <Loader2
+                        key={action}
+                        className={`${commonClass} ${busyClass} animate-spin`}
+                        aria-label='看过处理中'
+                      />
+                    );
+                  }
+                  return (
+                    <CheckCircle2
+                      key={action}
+                      onClick={handleDoubanMarkClick(action)}
+                      className={`${commonClass} ${busyClass} ${disabledClass}`}
+                      aria-label='看过'
+                    />
+                  );
+                }
+
+                if (isThisLoading) {
+                  return (
+                    <Loader2
+                      key={action}
+                      className={`${commonClass} ${busyClass} animate-spin`}
+                      aria-label='移除处理中'
+                    />
+                  );
+                }
+                return (
+                  <Trash2
+                    key={action}
+                    onClick={handleDoubanMarkClick(action)}
+                    className={`${commonClass} ${busyClass} ${disabledClass}`}
+                    aria-label='移除'
+                  />
+                );
+              })}
           </div>
         )}
 
         {/* 徽章 */}
         {config.showRating && rate && (
-          <div className='absolute top-2 right-2 bg-pink-500 text-white text-xs font-bold w-7 h-7 rounded-full flex items-center justify-center shadow-md transition-all duration-300 ease-out group-hover:scale-110'>
+          <div className='absolute top-2 right-2 text-white text-xs font-bold drop-shadow-md transition-all duration-300 ease-out group-hover:scale-110'>
             {rate}
           </div>
         )}

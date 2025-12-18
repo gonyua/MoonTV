@@ -30,7 +30,7 @@ import {
 } from '@/lib/client/db.client';
 import { getDoubanCategories } from '@/lib/client/douban.client';
 import { getDoubanCookie, syncDoubanCookie } from '@/lib/client/douban-auth';
-import { BoxOfficeResult, DoubanMineResult } from '@/lib/types';
+import { BoxOfficeResult, DoubanMineResult, DoubanResult } from '@/lib/types';
 
 import CapsuleSwitch from '@/components/CapsuleSwitch';
 import ContinueWatching from '@/components/ContinueWatching';
@@ -55,7 +55,6 @@ const HOME_ACTIVE_TAB_KEY = 'selection:home:activeTab';
 type TabType =
   | 'home'
   | 'wish'
-  | 'do'
   | 'collect'
   | 'globalRank'
   | 'chinaRank'
@@ -73,7 +72,6 @@ function HomeClient() {
     const valid: TabType[] = [
       'home',
       'wish',
-      'do',
       'collect',
       'globalRank',
       'chinaRank',
@@ -243,6 +241,21 @@ function HomeClient() {
     gcTime: QUERY_GC_TIME,
   });
 
+  const nowPlayingQuery = useQuery<DoubanResult>({
+    queryKey: ['douban', 'nowplaying'],
+    enabled: activeTab === 'home',
+    queryFn: async () => {
+      const response = await fetch('/api/douban/nowplaying');
+      const data = (await response.json()) as DoubanResult;
+      if (!response.ok || data.code !== 200) {
+        throw new Error(data.message || `获取正在热映失败: ${response.status}`);
+      }
+      return data;
+    },
+    staleTime: QUERY_STALE_TIME,
+    gcTime: QUERY_GC_TIME,
+  });
+
   const loading =
     hotMoviesQuery.isPending ||
     hotTvShowsQuery.isPending ||
@@ -251,6 +264,7 @@ function HomeClient() {
   const hotMovies = hotMoviesQuery.data?.list ?? [];
   const hotTvShows = hotTvShowsQuery.data?.list ?? [];
   const hotVarietyShows = hotVarietyShowsQuery.data?.list ?? [];
+  const nowPlayingMovies = nowPlayingQuery.data?.list ?? [];
 
   const boxOfficeGlobalQuery = useQuery<BoxOfficeResult>({
     queryKey: ['boxOffice', 'global'],
@@ -283,7 +297,7 @@ function HomeClient() {
   });
 
   const getDoubanMineQueryKey = useCallback(
-    (status: 'wish' | 'do' | 'collect') => {
+    (status: 'wish' | 'collect') => {
       return [
         'doubanMine',
         { status, userId: doubanUserId || 'anonymous' },
@@ -292,7 +306,7 @@ function HomeClient() {
     [doubanUserId]
   );
 
-  const useDoubanMine = (status: 'wish' | 'do' | 'collect') => {
+  const useDoubanMine = (status: 'wish' | 'collect') => {
     return useInfiniteQuery<DoubanMineResult>({
       queryKey: getDoubanMineQueryKey(status),
       enabled:
@@ -338,17 +352,13 @@ function HomeClient() {
   };
 
   const doubanMineWishQuery = useDoubanMine('wish');
-  const doubanMineDoQuery = useDoubanMine('do');
   const doubanMineCollectQuery = useDoubanMine('collect');
 
-  const isMineTab =
-    activeTab === 'wish' || activeTab === 'do' || activeTab === 'collect';
+  const isMineTab = activeTab === 'wish' || activeTab === 'collect';
 
   const activeMineQuery =
     activeTab === 'wish'
       ? doubanMineWishQuery
-      : activeTab === 'do'
-      ? doubanMineDoQuery
       : activeTab === 'collect'
       ? doubanMineCollectQuery
       : null;
@@ -378,15 +388,43 @@ function HomeClient() {
   // Cookie保存后重新加载数据
   const handleCookieSave = () => {
     setShowCookieModal(false);
-    if (activeTab === 'wish' || activeTab === 'do' || activeTab === 'collect') {
+    if (activeTab === 'wish' || activeTab === 'collect') {
       queryClient.removeQueries({ queryKey: getDoubanMineQueryKey(activeTab) });
     }
   };
 
   // 刷新数据
-  const handleRefresh = (status: 'wish' | 'do' | 'collect') => {
+  const handleRefresh = (status: 'wish' | 'collect') => {
     queryClient.removeQueries({ queryKey: getDoubanMineQueryKey(status) });
   };
+
+  const removeMineItemFromCache = useCallback(
+    (status: 'wish' | 'collect', subjectId: string) => {
+      queryClient.setQueryData(getDoubanMineQueryKey(status), (old) => {
+        if (!old) return old;
+
+        const data = old as {
+          pages: DoubanMineResult[];
+          pageParams: unknown[];
+        };
+
+        return {
+          ...data,
+          pages: data.pages.map((page) => ({
+            ...page,
+            list: page.list.filter((item) => item.id !== subjectId),
+          })),
+        };
+      });
+    },
+    [getDoubanMineQueryKey, queryClient]
+  );
+
+  const mineCardActions = useMemo(() => {
+    if (activeTab === 'wish') return ['remove', 'collect'] as const;
+    if (activeTab === 'collect') return ['remove'] as const;
+    return null;
+  }, [activeTab]);
 
   // 设置滚动监听 - 无限滚动加载更多
   useEffect(() => {
@@ -426,7 +464,8 @@ function HomeClient() {
       return (
         !hotMoviesQuery.isPending &&
         !hotTvShowsQuery.isPending &&
-        !hotVarietyShowsQuery.isPending
+        !hotVarietyShowsQuery.isPending &&
+        !nowPlayingQuery.isPending
       );
     }
     if (activeTab === 'favorites') {
@@ -452,6 +491,7 @@ function HomeClient() {
     hotMoviesQuery.isPending,
     hotTvShowsQuery.isPending,
     hotVarietyShowsQuery.isPending,
+    nowPlayingQuery.isPending,
     isMineTab,
   ]);
 
@@ -570,7 +610,6 @@ function HomeClient() {
             options={[
               { label: '首页', value: 'home' },
               { label: '想看', value: 'wish' },
-              { label: '在看', value: 'do' },
               { label: '看过', value: 'collect' },
               { label: '全球', value: 'globalRank' },
               { label: '中国', value: 'chinaRank' },
@@ -579,9 +618,7 @@ function HomeClient() {
             active={activeTab}
             onChange={(value) => setActiveTab(value as TabType)}
           />
-          {(activeTab === 'wish' ||
-            activeTab === 'do' ||
-            activeTab === 'collect') && (
+          {(activeTab === 'wish' || activeTab === 'collect') && (
             <button
               onClick={() => setShowCookieModal(true)}
               className='p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
@@ -728,18 +765,12 @@ function HomeClient() {
                 )}
               </div>
             </section>
-          ) : activeTab === 'wish' ||
-            activeTab === 'do' ||
-            activeTab === 'collect' ? (
-            // 豆瓣想看/在看/看过视图
+          ) : activeTab === 'wish' || activeTab === 'collect' ? (
+            // 豆瓣想看/看过视图
             <section className='mb-8'>
               <div className='mb-4 flex items-center justify-between'>
                 <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
-                  {activeTab === 'wish'
-                    ? '想看'
-                    : activeTab === 'do'
-                    ? '在看'
-                    : '看过'}
+                  {activeTab === 'wish' ? '想看' : '看过'}
                 </h2>
                 {doubanLoggedIn && mineItems.length > 0 && (
                   <button
@@ -785,6 +816,28 @@ function HomeClient() {
                           poster={item.poster}
                           douban_id={item.id}
                           year={item.year}
+                          doubanMarkActions={mineCardActions ?? undefined}
+                          onDoubanMarkNeedLogin={() => setShowCookieModal(true)}
+                          onDoubanMarkSuccess={(action, subjectId) => {
+                            if (activeTab === 'wish') {
+                              if (action === 'collect' || action === 'remove') {
+                                removeMineItemFromCache('wish', subjectId);
+                              }
+                              if (action === 'collect') {
+                                queryClient.removeQueries({
+                                  queryKey: getDoubanMineQueryKey('collect'),
+                                });
+                              }
+                              return;
+                            }
+
+                            if (
+                              activeTab === 'collect' &&
+                              action === 'remove'
+                            ) {
+                              removeMineItemFromCache('collect', subjectId);
+                            }
+                          }}
                         />
                       </div>
                     ))}
@@ -838,8 +891,62 @@ function HomeClient() {
             <>
               {/* 继续观看 */}
               <div className='mb-4'>
-                <ContinueWatching />
+                <ContinueWatching
+                  onDoubanMarkNeedLogin={() => setShowCookieModal(true)}
+                />
               </div>
+
+              {/* 正在热映 */}
+              <section className='mb-4'>
+                <div className='mb-2 flex items-center justify-between'>
+                  <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
+                    正在热映
+                  </h2>
+                  <Link
+                    href='/douban?type=movie'
+                    className='flex items-center text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                  >
+                    查看更多
+                    <ChevronRight className='w-4 h-4 ml-1' />
+                  </Link>
+                </div>
+                <ScrollableRow>
+                  {nowPlayingQuery.isPending
+                    ? // 加载状态显示灰色占位数据
+                      Array.from({ length: 8 }).map((_, index) => (
+                        <div
+                          key={index}
+                          className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
+                        >
+                          <div className='relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-gray-200 animate-pulse dark:bg-gray-800'>
+                            <div className='absolute inset-0 bg-gray-300 dark:bg-gray-700'></div>
+                          </div>
+                          <div className='mt-2 h-4 bg-gray-200 rounded animate-pulse dark:bg-gray-800'></div>
+                        </div>
+                      ))
+                    : // 显示真实数据
+                      nowPlayingMovies.map((movie, index) => (
+                        <div
+                          key={index}
+                          className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
+                        >
+                          <VideoCard
+                            from='douban'
+                            title={movie.title}
+                            poster={movie.poster}
+                            douban_id={movie.id}
+                            rate={movie.rate}
+                            year={movie.year}
+                            type='movie'
+                            doubanMarkActions={['collect', 'wish']}
+                            onDoubanMarkNeedLogin={() =>
+                              setShowCookieModal(true)
+                            }
+                          />
+                        </div>
+                      ))}
+                </ScrollableRow>
+              </section>
 
               {/* 热门电影 */}
               <section className='mb-4'>
@@ -883,6 +990,10 @@ function HomeClient() {
                             rate={movie.rate}
                             year={movie.year}
                             type='movie'
+                            doubanMarkActions={['collect', 'wish']}
+                            onDoubanMarkNeedLogin={() =>
+                              setShowCookieModal(true)
+                            }
                           />
                         </div>
                       ))}
@@ -930,6 +1041,10 @@ function HomeClient() {
                             douban_id={show.id}
                             rate={show.rate}
                             year={show.year}
+                            doubanMarkActions={['collect', 'wish']}
+                            onDoubanMarkNeedLogin={() =>
+                              setShowCookieModal(true)
+                            }
                           />
                         </div>
                       ))}
@@ -977,6 +1092,10 @@ function HomeClient() {
                             douban_id={show.id}
                             rate={show.rate}
                             year={show.year}
+                            doubanMarkActions={['collect', 'wish']}
+                            onDoubanMarkNeedLogin={() =>
+                              setShowCookieModal(true)
+                            }
                           />
                         </div>
                       ))}

@@ -407,8 +407,8 @@ export async function GET() {
 
   const morningStart = 8 * 60 + 10;
   const morningEnd = 8 * 60 + 30;
-  const eveningStart = 20 * 60 - 10;
-  const eveningEnd = 20 * 60 + 10;
+  const eveningStart = 19 * 60 - 10;
+  const eveningEnd = 19 * 60 + 10;
 
   const inMorningWindow =
     totalMinutes >= morningStart && totalMinutes <= morningEnd;

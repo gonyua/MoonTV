@@ -15,9 +15,13 @@ import VideoCard from '@/components/VideoCard';
 
 interface ContinueWatchingProps {
   className?: string;
+  onDoubanMarkNeedLogin?: () => void;
 }
 
-export default function ContinueWatching({ className }: ContinueWatchingProps) {
+export default function ContinueWatching({
+  className,
+  onDoubanMarkNeedLogin,
+}: ContinueWatchingProps) {
   const [playRecords, setPlayRecords] = useState<
     (PlayRecord & { key: string })[]
   >([]);
@@ -153,7 +157,10 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
                     episodes={record.total_episodes}
                     currentEpisode={record.index}
                     query={record.search_title}
+                    douban_id={record.douban_id?.toString()}
                     from='playrecord'
+                    doubanMarkActions={['collect', 'wish']}
+                    onDoubanMarkNeedLogin={onDoubanMarkNeedLogin}
                     onDelete={() =>
                       setPlayRecords((prev) =>
                         prev.filter((r) => r.key !== record.key)

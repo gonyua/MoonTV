@@ -38,6 +38,7 @@ function SearchPageClient() {
   const showResults = Boolean(normalizedUrlQuery);
 
   const [searchQuery, setSearchQuery] = useState(normalizedUrlQuery);
+  const shouldShowResults = showResults && Boolean(searchQuery.trim());
 
   const hasRestoredScrollRef = useRef(false);
   const ignoreScrollSaveRef = useRef(false);
@@ -59,9 +60,9 @@ function SearchPageClient() {
   });
 
   const scrollKey = useMemo(() => {
-    if (!normalizedUrlQuery) return null;
+    if (!shouldShowResults) return null;
     return `scroll:search:${normalizedUrlQuery}:${viewMode}`;
-  }, [normalizedUrlQuery, viewMode]);
+  }, [normalizedUrlQuery, shouldShowResults, viewMode]);
 
   const { data: searchResults = [], isPending } = useQuery<SearchResult[]>({
     queryKey: ['search', { q: normalizedUrlQuery }],
@@ -338,7 +339,7 @@ function SearchPageClient() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder='搜索电影、电视剧...'
-                className='w-full h-12 rounded-lg bg-gray-50/80 py-3 pl-10 pr-4 text-base md:text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:bg-white border border-gray-200/50 shadow-sm dark:bg-gray-800 dark:text-gray-300 dark:placeholder-gray-500 dark:focus:bg-gray-700 dark:border-gray-700'
+                className='w-full h-12 rounded-lg bg-gray-50/80 py-3 pl-10 pr-4 text-base md:text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus-visible:outline-none focus:ring-2 focus:ring-orange-400 focus:ring-offset-0 focus:border-orange-400 focus:bg-white border border-gray-200/50 shadow-sm dark:bg-gray-800 dark:text-gray-300 dark:placeholder-gray-500 dark:focus:bg-gray-700 dark:border-gray-700 dark:focus:border-orange-400'
               />
             </div>
           </form>
@@ -346,11 +347,11 @@ function SearchPageClient() {
 
         {/* 搜索结果或搜索历史 */}
         <div className='max-w-[95%] mx-auto mt-12 overflow-visible'>
-          {showResults && isPending ? (
+          {shouldShowResults && isPending ? (
             <div className='flex justify-center items-center h-40'>
               <div className='animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500'></div>
             </div>
-          ) : showResults ? (
+          ) : shouldShowResults ? (
             <section className='mb-12'>
               {/* 标题 + 聚合开关 */}
               <div className='mb-8 flex items-center justify-between'>

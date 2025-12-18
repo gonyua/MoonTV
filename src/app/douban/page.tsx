@@ -11,6 +11,7 @@ import { getDoubanCategories, getDoubanList } from '@/lib/client/douban.client';
 import { DoubanItem, DoubanResult } from '@/lib/types';
 
 import DoubanCardSkeleton from '@/components/DoubanCardSkeleton';
+import DoubanCookieModal from '@/components/DoubanCookieModal';
 import DoubanCustomSelector from '@/components/DoubanCustomSelector';
 import DoubanSelector from '@/components/DoubanSelector';
 import PageLayout from '@/components/PageLayout';
@@ -57,6 +58,8 @@ function DoubanPageClient() {
 
   const type = searchParams.get('type') || 'movie';
   const selectionStorageKey = `selection:douban:${type}`;
+
+  const [showCookieModal, setShowCookieModal] = useState(false);
 
   // 获取 runtimeConfig 中的自定义分类数据
   const [customCategories, setCustomCategories] = useState<
@@ -503,6 +506,8 @@ function DoubanPageClient() {
                       rate={item.rate}
                       year={item.year}
                       type={type === 'movie' ? 'movie' : ''} // 电影类型严格控制，tv 不控
+                      doubanMarkActions={['collect', 'wish']}
+                      onDoubanMarkNeedLogin={() => setShowCookieModal(true)}
                     />
                   </div>
                 ))}
@@ -540,6 +545,11 @@ function DoubanPageClient() {
           )}
         </div>
       </div>
+      <DoubanCookieModal
+        isOpen={showCookieModal}
+        onClose={() => setShowCookieModal(false)}
+        onSave={() => setShowCookieModal(false)}
+      />
     </PageLayout>
   );
 }

@@ -4,7 +4,7 @@
 
 import Artplayer from 'artplayer';
 import Hls from 'hls.js';
-import { Heart } from 'lucide-react';
+import { BookmarkPlus, CheckCircle2, Heart, Loader2 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 
@@ -21,9 +21,11 @@ import {
   saveSkipConfig,
   subscribeToDataUpdates,
 } from '@/lib/client/db.client';
+import { getDoubanCookie } from '@/lib/client/douban-auth';
 import { SearchResult } from '@/lib/types';
 import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
 
+import DoubanCookieModal from '@/components/DoubanCookieModal';
 import EpisodeSelector from '@/components/EpisodeSelector';
 import PageLayout from '@/components/PageLayout';
 
@@ -38,6 +40,11 @@ function PlayPageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  const normalizeDoubanId = (value: unknown): number | null => {
+    const num = typeof value === 'string' ? Number(value) : (value as number);
+    return Number.isFinite(num) && num > 0 ? num : null;
+  };
+
   // -----------------------------------------------------------------------------
   // 状态变量（State）
   // -----------------------------------------------------------------------------
@@ -51,6 +58,11 @@ function PlayPageClient() {
 
   // 收藏状态
   const [favorited, setFavorited] = useState(false);
+
+  const [showCookieModal, setShowCookieModal] = useState(false);
+  const [doubanMarkLoading, setDoubanMarkLoading] = useState<
+    'wish' | 'collect' | null
+  >(null);
 
   // 跳过片头片尾配置
   const [skipConfig, setSkipConfig] = useState<{
@@ -101,6 +113,97 @@ function PlayPageClient() {
   // 搜索所需信息
   const [searchTitle] = useState(searchParams.get('stitle') || '');
   const [searchType] = useState(searchParams.get('stype') || '');
+  const [doubanId, setDoubanId] = useState<number | null>(() =>
+    normalizeDoubanId(searchParams.get('douban_id'))
+  );
+  const doubanIdRef = useRef<number | null>(doubanId);
+  useEffect(() => {
+    doubanIdRef.current = doubanId;
+  }, [doubanId]);
+
+  const showToast = (message: string, durationMs?: number) => {
+    if (typeof window === 'undefined') return;
+    window.dispatchEvent(
+      new CustomEvent('moon:toast', { detail: { message, durationMs } })
+    );
+  };
+
+  const isD1Storage = () => {
+    if (typeof window === 'undefined') {
+      return process.env.NEXT_PUBLIC_STORAGE_TYPE === 'd1';
+    }
+
+    const runtimeStorageType = (
+      window as Window & {
+        RUNTIME_CONFIG?: { STORAGE_TYPE?: string };
+      }
+    ).RUNTIME_CONFIG?.STORAGE_TYPE;
+
+    const storageType =
+      runtimeStorageType ||
+      (process.env.NEXT_PUBLIC_STORAGE_TYPE as string | undefined) ||
+      'localstorage';
+
+    return storageType === 'd1';
+  };
+
+  const handleDoubanMark = async (action: 'wish' | 'collect') => {
+    const subjectId =
+      doubanIdRef.current != null ? String(doubanIdRef.current) : '';
+    if (!subjectId) {
+      showToast('暂无豆瓣ID，无法标记', 2600);
+      return;
+    }
+
+    if (doubanMarkLoading) return;
+
+    const body: { subjectId: string; cookie?: string } = { subjectId };
+    if (!isD1Storage()) {
+      const cookie = getDoubanCookie();
+      if (!cookie) {
+        showToast('请先登录豆瓣账号', 2600);
+        setShowCookieModal(true);
+        return;
+      }
+      body.cookie = cookie;
+    }
+
+    setDoubanMarkLoading(action);
+    try {
+      const response = await fetch(`/api/douban/mark/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      const data = (await response.json().catch(() => null)) as {
+        code?: number;
+        message?: string;
+      } | null;
+
+      const code = data?.code ?? response.status;
+      const message = data?.message || `请求失败: ${response.status}`;
+
+      if (code === 401 || code === 403) {
+        showToast(message || '请先登录豆瓣账号', 2800);
+        setShowCookieModal(true);
+        return;
+      }
+
+      if (!response.ok || code !== 200) {
+        showToast(message, 3000);
+        return;
+      }
+
+      const actionText = action === 'wish' ? '已标记为想看' : '已标记为看过';
+      showToast(`${actionText}：${videoTitle || '影片'}`, 2400);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      showToast(`请求失败: ${msg}`, 3000);
+    } finally {
+      setDoubanMarkLoading(null);
+    }
+  };
 
   // 是否需要优选
   const [needPrefer, setNeedPrefer] = useState(
@@ -722,6 +825,12 @@ function PlayPageClient() {
 
       console.log(detailData.source, detailData.id);
 
+      const resolvedDoubanId =
+        doubanIdRef.current ?? normalizeDoubanId(detailData.douban_id);
+      if (resolvedDoubanId && !doubanIdRef.current) {
+        setDoubanId(resolvedDoubanId);
+      }
+
       setNeedPrefer(false);
       setCurrentSource(detailData.source);
       setCurrentId(detailData.id);
@@ -739,6 +848,11 @@ function PlayPageClient() {
       newUrl.searchParams.set('id', detailData.id);
       newUrl.searchParams.set('year', detailData.year);
       newUrl.searchParams.set('title', detailData.title);
+      if (resolvedDoubanId) {
+        newUrl.searchParams.set('douban_id', String(resolvedDoubanId));
+      } else {
+        newUrl.searchParams.delete('douban_id');
+      }
       newUrl.searchParams.delete('prefer');
       window.history.replaceState({}, '', newUrl.toString());
 
@@ -1044,6 +1158,9 @@ function PlayPageClient() {
       return;
     }
 
+    const resolvedDoubanId =
+      doubanIdRef.current ?? normalizeDoubanId(detailRef.current?.douban_id);
+
     try {
       await savePlayRecord(currentSourceRef.current, currentIdRef.current, {
         title: videoTitleRef.current,
@@ -1056,6 +1173,7 @@ function PlayPageClient() {
         total_time: Math.floor(duration),
         save_time: Date.now(),
         search_title: searchTitle,
+        douban_id: resolvedDoubanId || undefined,
       });
 
       lastSaveTimeRef.current = Date.now();
@@ -1825,6 +1943,40 @@ function PlayPageClient() {
                 >
                   <FavoriteIcon filled={favorited} />
                 </button>
+                {doubanId && (
+                  <>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDoubanMark('collect');
+                      }}
+                      disabled={doubanMarkLoading !== null}
+                      className='ml-2 flex-shrink-0 hover:opacity-80 transition-opacity disabled:opacity-50'
+                      aria-label='标记看过'
+                    >
+                      {doubanMarkLoading === 'collect' ? (
+                        <Loader2 className='h-7 w-7 animate-spin text-gray-600 dark:text-gray-300' />
+                      ) : (
+                        <CheckCircle2 className='h-7 w-7 stroke-[1] text-gray-600 dark:text-gray-300' />
+                      )}
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDoubanMark('wish');
+                      }}
+                      disabled={doubanMarkLoading !== null}
+                      className='ml-2 flex-shrink-0 hover:opacity-80 transition-opacity disabled:opacity-50'
+                      aria-label='标记想看'
+                    >
+                      {doubanMarkLoading === 'wish' ? (
+                        <Loader2 className='h-7 w-7 animate-spin text-gray-600 dark:text-gray-300' />
+                      ) : (
+                        <BookmarkPlus className='h-7 w-7 stroke-[1] text-gray-600 dark:text-gray-300' />
+                      )}
+                    </button>
+                  </>
+                )}
               </h1>
 
               {/* 关键信息行 */}
@@ -1896,6 +2048,11 @@ function PlayPageClient() {
           </div>
         </div>
       </div>
+      <DoubanCookieModal
+        isOpen={showCookieModal}
+        onClose={() => setShowCookieModal(false)}
+        onSave={() => setShowCookieModal(false)}
+      />
     </PageLayout>
   );
 }

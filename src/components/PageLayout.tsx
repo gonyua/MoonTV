@@ -3,6 +3,7 @@ import MobileBottomNav from './MobileBottomNav';
 import MobileHeader from './MobileHeader';
 import Sidebar from './Sidebar';
 import { ThemeToggle } from './ThemeToggle';
+import ToastHost from './ToastHost';
 import { UserMenu } from './UserMenu';
 
 interface PageLayoutProps {
@@ -54,6 +55,8 @@ const PageLayout = ({ children, activePath = '/' }: PageLayoutProps) => {
       <div className='md:hidden'>
         <MobileBottomNav activePath={activePath} />
       </div>
+
+      <ToastHost />
     </div>
   );
 };
