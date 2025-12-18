@@ -2,13 +2,27 @@
 
 'use client';
 
+import {
+  useInfiniteQuery,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { ChevronRight, Settings } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 // 客户端收藏 API
 import {
+  type Favorite as ClientFavorite,
+  type PlayRecord as ClientPlayRecord,
   clearAllFavorites,
   getAllFavorites,
   getAllPlayRecords,
@@ -16,13 +30,7 @@ import {
 } from '@/lib/client/db.client';
 import { getDoubanCategories } from '@/lib/client/douban.client';
 import { getDoubanCookie, syncDoubanCookie } from '@/lib/client/douban-auth';
-import {
-  BoxOfficeItem,
-  BoxOfficeResult,
-  DoubanItem,
-  DoubanMineItem,
-  DoubanMineResult,
-} from '@/lib/types';
+import { BoxOfficeResult, DoubanMineResult } from '@/lib/types';
 
 import CapsuleSwitch from '@/components/CapsuleSwitch';
 import ContinueWatching from '@/components/ContinueWatching';
@@ -40,6 +48,10 @@ const STORAGE_TYPE =
     | 'upstash'
     | undefined) || 'localstorage';
 
+const QUERY_STALE_TIME = 1000 * 60 * 5;
+const QUERY_GC_TIME = 1000 * 60 * 30;
+const HOME_ACTIVE_TAB_KEY = 'selection:home:activeTab';
+
 type TabType =
   | 'home'
   | 'wish'
@@ -51,49 +63,43 @@ type TabType =
 
 function HomeClient() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<TabType>('home');
-  const [hotMovies, setHotMovies] = useState<DoubanItem[]>([]);
-  const [hotTvShows, setHotTvShows] = useState<DoubanItem[]>([]);
-  const [hotVarietyShows, setHotVarietyShows] = useState<DoubanItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+
+  const [activeTab, setActiveTab] = useState<TabType>(() => {
+    if (typeof window === 'undefined') return 'home';
+    const saved = sessionStorage.getItem(HOME_ACTIVE_TAB_KEY);
+    if (!saved) return 'home';
+    const candidate = saved as TabType;
+    const valid: TabType[] = [
+      'home',
+      'wish',
+      'do',
+      'collect',
+      'globalRank',
+      'chinaRank',
+      'favorites',
+    ];
+    return valid.includes(candidate) ? candidate : 'home';
+  });
   const { announcement } = useSite();
 
   const [showAnnouncement, setShowAnnouncement] = useState(false);
 
-  // 票房榜数据状态
-  const [boxOfficeData, setBoxOfficeData] = useState<{
-    global: BoxOfficeItem[];
-    china: BoxOfficeItem[];
-  }>({ global: [], china: [] });
-  const [boxOfficeLoading, setBoxOfficeLoading] = useState<{
-    global: boolean;
-    china: boolean;
-  }>({ global: false, china: false });
-  const [boxOfficeError, setBoxOfficeError] = useState<{
-    global: string | null;
-    china: string | null;
-  }>({ global: null, china: null });
-
-  // 豆瓣个人数据状态
-  const [doubanMineData, setDoubanMineData] = useState<{
-    wish: DoubanMineItem[];
-    do: DoubanMineItem[];
-    collect: DoubanMineItem[];
-  }>({ wish: [], do: [], collect: [] });
-  const [doubanMineHasMore, setDoubanMineHasMore] = useState<{
-    wish: boolean;
-    do: boolean;
-    collect: boolean;
-  }>({ wish: true, do: true, collect: true });
-  const [doubanMineLoading, setDoubanMineLoading] = useState(false);
-  const [doubanMineLoadingMore, setDoubanMineLoadingMore] = useState(false);
   const [showCookieModal, setShowCookieModal] = useState(false);
-  const [doubanMineError, setDoubanMineError] = useState<string | null>(null);
-  const [doubanLoggedIn, setDoubanLoggedIn] = useState(false);
+  const [doubanUserId, setDoubanUserId] = useState<string | null>(null);
 
   // IntersectionObserver refs for infinite scroll
   const observerRef = useRef<IntersectionObserver | null>(null);
   const loadingRef = useRef<HTMLDivElement>(null);
+
+  const hasRestoredScrollRef = useRef(false);
+  const ignoreScrollSaveRef = useRef(false);
+  const lastSavedScrollTopRef = useRef(0);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    sessionStorage.setItem(HOME_ACTIVE_TAB_KEY, activeTab);
+  }, [activeTab]);
 
   // 检查公告弹窗状态
   useEffect(() => {
@@ -112,6 +118,7 @@ function HomeClient() {
     id: string;
     source: string;
     title: string;
+    year?: string;
     poster: string;
     episodes: number;
     source_name: string;
@@ -119,14 +126,12 @@ function HomeClient() {
     search_title?: string;
   };
 
-  const [favoriteItems, setFavoriteItems] = useState<FavoriteItem[]>([]);
-
   // 同步当前豆瓣登录状态（从 Cookie 源解析）
   useEffect(() => {
     let cancelled = false;
     syncDoubanCookie().then((id) => {
       if (!cancelled) {
-        setDoubanLoggedIn(Boolean(id));
+        setDoubanUserId(id);
       }
     });
     return () => {
@@ -134,252 +139,269 @@ function HomeClient() {
     };
   }, [showCookieModal]);
 
-  useEffect(() => {
-    const fetchDoubanData = async () => {
-      try {
-        setLoading(true);
+  const scrollKey = useMemo(() => `scroll:home:${activeTab}`, [activeTab]);
 
-        // 并行获取热门电影、热门剧集和热门综艺
-        const [moviesData, tvShowsData, varietyShowsData] = await Promise.all([
-          getDoubanCategories({
-            kind: 'movie',
-            category: '热门',
-            type: '全部',
-          }),
-          getDoubanCategories({ kind: 'tv', category: 'tv', type: 'tv' }),
-          getDoubanCategories({ kind: 'tv', category: 'show', type: 'show' }),
-        ]);
+  const buildFavoriteItems = useCallback(
+    (
+      allFavorites: Record<string, ClientFavorite>,
+      allPlayRecords: Record<string, ClientPlayRecord>
+    ): FavoriteItem[] => {
+      return Object.entries(allFavorites)
+        .sort(([, a], [, b]) => b.save_time - a.save_time)
+        .map(([key, fav]) => {
+          const plusIndex = key.indexOf('+');
+          const source = key.slice(0, plusIndex);
+          const id = key.slice(plusIndex + 1);
+          const currentEpisode = allPlayRecords[key]?.index;
 
-        if (moviesData.code === 200) {
-          setHotMovies(moviesData.list);
-        }
-
-        if (tvShowsData.code === 200) {
-          setHotTvShows(tvShowsData.list);
-        }
-
-        if (varietyShowsData.code === 200) {
-          setHotVarietyShows(varietyShowsData.list);
-        }
-      } catch (error) {
-        console.error('获取豆瓣数据失败:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchDoubanData();
-  }, []);
-
-  // 处理收藏数据更新的函数
-  const updateFavoriteItems = async (allFavorites: Record<string, any>) => {
-    const allPlayRecords = await getAllPlayRecords();
-
-    // 根据保存时间排序（从近到远）
-    const sorted = Object.entries(allFavorites)
-      .sort(([, a], [, b]) => b.save_time - a.save_time)
-      .map(([key, fav]) => {
-        const plusIndex = key.indexOf('+');
-        const source = key.slice(0, plusIndex);
-        const id = key.slice(plusIndex + 1);
-
-        // 查找对应的播放记录，获取当前集数
-        const playRecord = allPlayRecords[key];
-        const currentEpisode = playRecord?.index;
-
-        return {
-          id,
-          source,
-          title: fav.title,
-          year: fav.year,
-          poster: fav.cover,
-          episodes: fav.total_episodes,
-          source_name: fav.source_name,
-          currentEpisode,
-          search_title: fav?.search_title,
-        } as FavoriteItem;
-      });
-    setFavoriteItems(sorted);
-  };
-
-  // 获取票房榜数据
-  const fetchBoxOffice = useCallback(
-    async (type: 'global' | 'china') => {
-      if (boxOfficeData[type].length > 0) return; // 已有数据则不重复加载
-
-      setBoxOfficeLoading((prev) => ({ ...prev, [type]: true }));
-      setBoxOfficeError((prev) => ({ ...prev, [type]: null }));
-
-      try {
-        const response = await fetch(`/api/boxoffice/${type}`);
-        const data: BoxOfficeResult = await response.json();
-
-        if (data.code === 200) {
-          setBoxOfficeData((prev) => ({ ...prev, [type]: data.list }));
-        } else {
-          setBoxOfficeError((prev) => ({
-            ...prev,
-            [type]: data.message || '获取数据失败',
-          }));
-        }
-      } catch {
-        setBoxOfficeError((prev) => ({ ...prev, [type]: '网络错误' }));
-      } finally {
-        setBoxOfficeLoading((prev) => ({ ...prev, [type]: false }));
-      }
+          return {
+            id,
+            source,
+            title: fav.title,
+            year: fav.year,
+            poster: fav.cover,
+            episodes: fav.total_episodes,
+            source_name: fav.source_name,
+            currentEpisode,
+            search_title: fav.search_title,
+          };
+        });
     },
-    [boxOfficeData]
+    []
   );
 
-  // 当切换到票房榜 tab 时加载数据
+  const { data: favoriteItems = [], isPending: favoritesPending } = useQuery<
+    FavoriteItem[]
+  >({
+    queryKey: ['favorites', 'home'],
+    enabled: activeTab === 'favorites',
+    queryFn: async () => {
+      const [allFavorites, allPlayRecords] = await Promise.all([
+        getAllFavorites(),
+        getAllPlayRecords(),
+      ]);
+      return buildFavoriteItems(allFavorites, allPlayRecords);
+    },
+    staleTime: QUERY_STALE_TIME,
+    gcTime: QUERY_GC_TIME,
+  });
+
   useEffect(() => {
-    if (activeTab === 'globalRank') {
-      fetchBoxOffice('global');
-    } else if (activeTab === 'chinaRank') {
-      fetchBoxOffice('china');
-    }
-  }, [activeTab, fetchBoxOffice]);
-
-  // 当切换到收藏夹时加载收藏数据
-  useEffect(() => {
-    if (activeTab !== 'favorites') return;
-
-    const loadFavorites = async () => {
-      const allFavorites = await getAllFavorites();
-      await updateFavoriteItems(allFavorites);
-    };
-
-    loadFavorites();
-
-    // 监听收藏更新事件
     const unsubscribe = subscribeToDataUpdates(
       'favoritesUpdated',
-      (newFavorites: Record<string, any>) => {
-        updateFavoriteItems(newFavorites);
+      async (newFavorites: Record<string, ClientFavorite>) => {
+        const allPlayRecords = await getAllPlayRecords();
+        queryClient.setQueryData<FavoriteItem[]>(
+          ['favorites', 'home'],
+          buildFavoriteItems(newFavorites, allPlayRecords)
+        );
       }
     );
-
     return unsubscribe;
-  }, [activeTab]);
+  }, [buildFavoriteItems, queryClient]);
 
-  // 获取豆瓣个人数据
-  const fetchDoubanMine = useCallback(
-    async (status: 'wish' | 'do' | 'collect', loadMore = false) => {
-      // 计算起始位置
-      const start = loadMore ? doubanMineData[status].length : 0;
+  const hotMoviesQuery = useQuery({
+    queryKey: [
+      'douban',
+      'categories',
+      { kind: 'movie', category: '热门', type: '全部' },
+    ],
+    enabled: activeTab === 'home',
+    queryFn: () =>
+      getDoubanCategories({
+        kind: 'movie',
+        category: '热门',
+        type: '全部',
+      }),
+    staleTime: QUERY_STALE_TIME,
+    gcTime: QUERY_GC_TIME,
+  });
 
-      // 根据存储类型构建请求 URL
-      let url = `/api/douban/mine?status=${status}&start=${start}`;
+  const hotTvShowsQuery = useQuery({
+    queryKey: [
+      'douban',
+      'categories',
+      { kind: 'tv', category: 'tv', type: 'tv' },
+    ],
+    enabled: activeTab === 'home',
+    queryFn: () =>
+      getDoubanCategories({ kind: 'tv', category: 'tv', type: 'tv' }),
+    staleTime: QUERY_STALE_TIME,
+    gcTime: QUERY_GC_TIME,
+  });
 
-      // 非 D1 模式下仍然从localStorage获取 豆瓣cookie 并透传给服务端
-      if (STORAGE_TYPE !== 'd1') {
-        const cookie = getDoubanCookie();
-        if (!cookie) {
-          setShowCookieModal(true);
-          return;
-        }
+  const hotVarietyShowsQuery = useQuery({
+    queryKey: [
+      'douban',
+      'categories',
+      { kind: 'tv', category: 'show', type: 'show' },
+    ],
+    enabled: activeTab === 'home',
+    queryFn: () =>
+      getDoubanCategories({ kind: 'tv', category: 'show', type: 'show' }),
+    staleTime: QUERY_STALE_TIME,
+    gcTime: QUERY_GC_TIME,
+  });
 
-        url += `&cookie=${encodeURIComponent(cookie)}`;
+  const loading =
+    hotMoviesQuery.isPending ||
+    hotTvShowsQuery.isPending ||
+    hotVarietyShowsQuery.isPending;
+
+  const hotMovies = hotMoviesQuery.data?.list ?? [];
+  const hotTvShows = hotTvShowsQuery.data?.list ?? [];
+  const hotVarietyShows = hotVarietyShowsQuery.data?.list ?? [];
+
+  const boxOfficeGlobalQuery = useQuery<BoxOfficeResult>({
+    queryKey: ['boxOffice', 'global'],
+    enabled: activeTab === 'globalRank',
+    queryFn: async () => {
+      const response = await fetch('/api/boxoffice/global');
+      const data = (await response.json()) as BoxOfficeResult;
+      if (!response.ok || data.code !== 200) {
+        throw new Error(data.message || `获取票房榜失败: ${response.status}`);
       }
-
-      if (loadMore) {
-        setDoubanMineLoadingMore(true);
-      } else {
-        setDoubanMineLoading(true);
-      }
-      setDoubanMineError(null);
-
-      try {
-        const response = await fetch(url);
-        const data: DoubanMineResult = await response.json();
-
-        if (data.code === 401 || data.code === 403) {
-          setShowCookieModal(true);
-          setDoubanMineError(data.message);
-        } else if (data.code === 200) {
-          setDoubanMineData((prev) => ({
-            ...prev,
-            [status]: loadMore ? [...prev[status], ...data.list] : data.list,
-          }));
-          setDoubanMineHasMore((prev) => ({
-            ...prev,
-            [status]: data.hasMore,
-          }));
-        } else {
-          setDoubanMineError(data.message);
-        }
-      } catch (error) {
-        console.error('获取豆瓣数据失败:', error);
-        setDoubanMineError('获取数据失败，请稍后重试');
-      } finally {
-        setDoubanMineLoading(false);
-        setDoubanMineLoadingMore(false);
-      }
+      return data;
     },
-    [doubanMineData]
+    staleTime: QUERY_STALE_TIME,
+    gcTime: QUERY_GC_TIME,
+  });
+
+  const boxOfficeChinaQuery = useQuery<BoxOfficeResult>({
+    queryKey: ['boxOffice', 'china'],
+    enabled: activeTab === 'chinaRank',
+    queryFn: async () => {
+      const response = await fetch('/api/boxoffice/china');
+      const data = (await response.json()) as BoxOfficeResult;
+      if (!response.ok || data.code !== 200) {
+        throw new Error(data.message || `获取票房榜失败: ${response.status}`);
+      }
+      return data;
+    },
+    staleTime: QUERY_STALE_TIME,
+    gcTime: QUERY_GC_TIME,
+  });
+
+  const getDoubanMineQueryKey = useCallback(
+    (status: 'wish' | 'do' | 'collect') => {
+      return [
+        'doubanMine',
+        { status, userId: doubanUserId || 'anonymous' },
+      ] as const;
+    },
+    [doubanUserId]
   );
 
-  // 当切换到豆瓣tab时加载数据
+  const useDoubanMine = (status: 'wish' | 'do' | 'collect') => {
+    return useInfiniteQuery<DoubanMineResult>({
+      queryKey: getDoubanMineQueryKey(status),
+      enabled:
+        activeTab === status &&
+        Boolean(doubanUserId) &&
+        // 非 D1 模式下：必须有 cookie 才能请求
+        (STORAGE_TYPE === 'd1' ? true : Boolean(getDoubanCookie())),
+      initialPageParam: 0,
+      queryFn: async ({ pageParam }) => {
+        let url = `/api/douban/mine?status=${status}&start=${pageParam}`;
+
+        if (STORAGE_TYPE !== 'd1') {
+          const cookie = getDoubanCookie();
+          if (!cookie) {
+            throw new Error('请先登录豆瓣账号');
+          }
+          url += `&cookie=${encodeURIComponent(cookie)}`;
+        }
+
+        const response = await fetch(url);
+        const data = (await response.json()) as DoubanMineResult;
+        if (!response.ok) {
+          throw new Error(
+            data.message || `获取豆瓣数据失败: ${response.status}`
+          );
+        }
+
+        if (data.code === 401 || data.code === 403) {
+          throw new Error(data.message || '请先登录豆瓣账号');
+        }
+        if (data.code !== 200) {
+          throw new Error(data.message || '获取豆瓣数据失败');
+        }
+        return data;
+      },
+      getNextPageParam: (lastPage, pages) => {
+        if (!lastPage.hasMore) return undefined;
+        return pages.reduce((sum, p) => sum + p.list.length, 0);
+      },
+      staleTime: QUERY_STALE_TIME,
+      gcTime: QUERY_GC_TIME,
+    });
+  };
+
+  const doubanMineWishQuery = useDoubanMine('wish');
+  const doubanMineDoQuery = useDoubanMine('do');
+  const doubanMineCollectQuery = useDoubanMine('collect');
+
+  const isMineTab =
+    activeTab === 'wish' || activeTab === 'do' || activeTab === 'collect';
+
+  const activeMineQuery =
+    activeTab === 'wish'
+      ? doubanMineWishQuery
+      : activeTab === 'do'
+      ? doubanMineDoQuery
+      : activeTab === 'collect'
+      ? doubanMineCollectQuery
+      : null;
+
+  const mineItems = useMemo(() => {
+    const pages = activeMineQuery?.data?.pages ?? [];
+    return pages.flatMap((p) => p.list);
+  }, [activeMineQuery?.data?.pages]);
+
   useEffect(() => {
-    if (activeTab === 'wish' || activeTab === 'do' || activeTab === 'collect') {
-      // 如果没有数据，则加载
-      if (doubanMineData[activeTab].length === 0) {
-        fetchDoubanMine(activeTab);
-      }
+    if (!isMineTab) return;
+    if (doubanUserId) return;
+    setShowCookieModal(true);
+  }, [doubanUserId, isMineTab]);
+
+  useEffect(() => {
+    if (!isMineTab) return;
+    if (!activeMineQuery?.isError) return;
+
+    const message =
+      (activeMineQuery.error as Error | null)?.message || '获取豆瓣数据失败';
+    if (message.includes('登录') || message.includes('cookie')) {
+      setShowCookieModal(true);
     }
-  }, [activeTab, fetchDoubanMine]);
+  }, [activeMineQuery?.error, activeMineQuery?.isError, isMineTab]);
 
   // Cookie保存后重新加载数据
   const handleCookieSave = () => {
     setShowCookieModal(false);
     if (activeTab === 'wish' || activeTab === 'do' || activeTab === 'collect') {
-      // 重置数据和分页状态
-      setDoubanMineData((prev) => ({ ...prev, [activeTab]: [] }));
-      setDoubanMineHasMore((prev) => ({ ...prev, [activeTab]: true }));
-      fetchDoubanMine(activeTab);
+      queryClient.removeQueries({ queryKey: getDoubanMineQueryKey(activeTab) });
     }
   };
 
-  // 加载更多
-  const handleLoadMore = useCallback(
-    (status: 'wish' | 'do' | 'collect') => {
-      if (!doubanMineLoadingMore && doubanMineHasMore[status]) {
-        fetchDoubanMine(status, true);
-      }
-    },
-    [doubanMineLoadingMore, doubanMineHasMore, fetchDoubanMine]
-  );
+  // 刷新数据
+  const handleRefresh = (status: 'wish' | 'do' | 'collect') => {
+    queryClient.removeQueries({ queryKey: getDoubanMineQueryKey(status) });
+  };
 
   // 设置滚动监听 - 无限滚动加载更多
   useEffect(() => {
-    // 只对豆瓣个人数据tab启用
-    if (activeTab !== 'wish' && activeTab !== 'do' && activeTab !== 'collect') {
-      return;
-    }
-
-    // 如果没有更多数据或正在加载，则不设置监听
-    if (
-      !doubanMineHasMore[activeTab] ||
-      doubanMineLoadingMore ||
-      doubanMineLoading
-    ) {
-      return;
-    }
-
-    // 确保 loadingRef 存在
-    if (!loadingRef.current) {
-      return;
-    }
+    if (!isMineTab) return;
+    if (!activeMineQuery) return;
+    if (!activeMineQuery.hasNextPage) return;
+    if (activeMineQuery.isFetchingNextPage || activeMineQuery.isPending) return;
+    if (!loadingRef.current) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
-        if (
-          entries[0].isIntersecting &&
-          doubanMineHasMore[activeTab] &&
-          !doubanMineLoadingMore
-        ) {
-          handleLoadMore(activeTab);
-        }
+        if (!entries[0]?.isIntersecting) return;
+        if (!activeMineQuery.hasNextPage) return;
+        if (activeMineQuery.isFetchingNextPage) return;
+        activeMineQuery.fetchNextPage();
       },
       { threshold: 0.1 }
     );
@@ -388,24 +410,151 @@ function HomeClient() {
     observerRef.current = observer;
 
     return () => {
-      if (observerRef.current) {
-        observerRef.current.disconnect();
-      }
+      observer.disconnect();
     };
   }, [
-    activeTab,
-    doubanMineHasMore,
-    doubanMineLoadingMore,
-    doubanMineLoading,
-    handleLoadMore,
+    activeMineQuery,
+    activeMineQuery?.fetchNextPage,
+    activeMineQuery?.hasNextPage,
+    activeMineQuery?.isFetchingNextPage,
+    activeMineQuery?.isPending,
+    isMineTab,
   ]);
 
-  // 刷新数据
-  const handleRefresh = (status: 'wish' | 'do' | 'collect') => {
-    setDoubanMineData((prev) => ({ ...prev, [status]: [] }));
-    setDoubanMineHasMore((prev) => ({ ...prev, [status]: true }));
-    fetchDoubanMine(status);
-  };
+  const isScrollRestoreReady = useMemo(() => {
+    if (activeTab === 'home') {
+      return (
+        !hotMoviesQuery.isPending &&
+        !hotTvShowsQuery.isPending &&
+        !hotVarietyShowsQuery.isPending
+      );
+    }
+    if (activeTab === 'favorites') {
+      return !favoritesPending;
+    }
+    if (activeTab === 'globalRank') {
+      return boxOfficeGlobalQuery.isSuccess || boxOfficeGlobalQuery.isError;
+    }
+    if (activeTab === 'chinaRank') {
+      return boxOfficeChinaQuery.isSuccess || boxOfficeChinaQuery.isError;
+    }
+    if (isMineTab) {
+      return !activeMineQuery?.isPending;
+    }
+    return true;
+  }, [
+    activeMineQuery?.isPending,
+    activeTab,
+    boxOfficeChinaQuery.isError,
+    boxOfficeChinaQuery.isSuccess,
+    boxOfficeGlobalQuery.isError,
+    boxOfficeGlobalQuery.isSuccess,
+    hotMoviesQuery.isPending,
+    hotTvShowsQuery.isPending,
+    hotVarietyShowsQuery.isPending,
+    isMineTab,
+  ]);
+
+  useEffect(() => {
+    hasRestoredScrollRef.current = false;
+    ignoreScrollSaveRef.current = false;
+    lastSavedScrollTopRef.current = 0;
+  }, [scrollKey]);
+
+  // 记录列表滚动位置（body 为滚动容器）
+  useEffect(() => {
+    if (!scrollKey) return;
+
+    let rafId = 0;
+    const save = () => {
+      if (ignoreScrollSaveRef.current) return;
+      const top = document.body.scrollTop;
+      lastSavedScrollTopRef.current = top;
+      sessionStorage.setItem(scrollKey, String(top));
+    };
+
+    const onScroll = () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(save);
+    };
+
+    document.body.addEventListener('scroll', onScroll, { passive: true });
+
+    return () => {
+      document.body.removeEventListener('scroll', onScroll);
+      if (rafId) cancelAnimationFrame(rafId);
+      sessionStorage.setItem(scrollKey, String(lastSavedScrollTopRef.current));
+    };
+  }, [scrollKey]);
+
+  // 数据已就绪时恢复滚动位置（返回列表页场景）
+  useEffect(() => {
+    if (!scrollKey) return;
+    if (hasRestoredScrollRef.current) return;
+    if (!isScrollRestoreReady) return;
+
+    const saved = sessionStorage.getItem(scrollKey);
+    if (!saved) return;
+
+    hasRestoredScrollRef.current = true;
+    requestAnimationFrame(() => {
+      const top = Number(saved) || 0;
+      lastSavedScrollTopRef.current = top;
+      document.body.scrollTo(0, top);
+    });
+  }, [isScrollRestoreReady, scrollKey]);
+
+  const handleCardClickCapture = useCallback(() => {
+    if (!scrollKey) return;
+    const top = document.body.scrollTop;
+    ignoreScrollSaveRef.current = true;
+    lastSavedScrollTopRef.current = top;
+    sessionStorage.setItem(scrollKey, String(top));
+
+    window.setTimeout(() => {
+      ignoreScrollSaveRef.current = false;
+    }, 1000);
+  }, [scrollKey]);
+
+  // 兜底：用原生 capture 监听，保证“点卡片跳转”时一定会先保存滚动（避免路由切换把 scrollTop=0 写回）
+  useEffect(() => {
+    if (!scrollKey) return;
+
+    const onDocumentClickCapture = (e: MouseEvent) => {
+      const target = e.target;
+      if (!(target instanceof Element)) return;
+
+      // VideoCard 根节点：className 包含 `group relative w-full ...`
+      const card = target.closest('div.group.relative.w-full');
+      if (!card) return;
+
+      handleCardClickCapture();
+    };
+
+    document.addEventListener('click', onDocumentClickCapture, true);
+    return () => {
+      document.removeEventListener('click', onDocumentClickCapture, true);
+    };
+  }, [handleCardClickCapture, scrollKey]);
+
+  const doubanLoggedIn = Boolean(doubanUserId);
+
+  const boxOfficeQuery =
+    activeTab === 'globalRank' ? boxOfficeGlobalQuery : boxOfficeChinaQuery;
+  const boxOfficeItems = boxOfficeQuery.data?.list ?? [];
+  const boxOfficeErrorMessage = boxOfficeQuery.isError
+    ? (boxOfficeQuery.error as Error).message
+    : null;
+
+  const doubanMineLoading = Boolean(isMineTab && activeMineQuery?.isPending);
+  const doubanMineLoadingMore = Boolean(
+    isMineTab && activeMineQuery?.isFetchingNextPage
+  );
+  const doubanMineHasMore = Boolean(isMineTab && activeMineQuery?.hasNextPage);
+  const doubanMineError =
+    isMineTab && activeMineQuery?.isError
+      ? (activeMineQuery.error as Error).message
+      : null;
 
   const handleCloseAnnouncement = (announcement: string) => {
     setShowAnnouncement(false);
@@ -453,28 +602,22 @@ function HomeClient() {
                     ? '全球电影票房排行榜'
                     : '中国电影票房排行榜'}
                 </h2>
-                {(activeTab === 'globalRank'
-                  ? boxOfficeData.global
-                  : boxOfficeData.china
-                ).length > 0 && (
+                {boxOfficeItems.length > 0 && (
                   <button
                     className='text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
                     onClick={() => {
                       const type =
                         activeTab === 'globalRank' ? 'global' : 'china';
-                      setBoxOfficeData((prev) => ({ ...prev, [type]: [] }));
-                      fetchBoxOffice(type);
+                      queryClient.invalidateQueries({
+                        queryKey: ['boxOffice', type],
+                      });
                     }}
                   >
                     刷新
                   </button>
                 )}
               </div>
-              {(
-                activeTab === 'globalRank'
-                  ? boxOfficeLoading.global
-                  : boxOfficeLoading.china
-              ) ? (
+              {boxOfficeQuery.isPending ? (
                 <div className='space-y-2'>
                   {Array.from({ length: 10 }).map((_, i) => (
                     <div
@@ -483,26 +626,18 @@ function HomeClient() {
                     />
                   ))}
                 </div>
-              ) : (
-                  activeTab === 'globalRank'
-                    ? boxOfficeError.global
-                    : boxOfficeError.china
-                ) ? (
+              ) : boxOfficeErrorMessage ? (
                 <div className='text-center text-gray-500 py-8 dark:text-gray-400'>
-                  {activeTab === 'globalRank'
-                    ? boxOfficeError.global
-                    : boxOfficeError.china}
+                  {boxOfficeErrorMessage}
                 </div>
               ) : (
                 <div className='space-y-1'>
-                  {(activeTab === 'globalRank'
-                    ? boxOfficeData.global
-                    : boxOfficeData.china
-                  ).map((item) => (
+                  {boxOfficeItems.map((item) => (
                     <div
                       key={item.rank}
                       className='flex items-center gap-3 py-3 px-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer'
                       onClick={() => {
+                        handleCardClickCapture();
                         const searchTitle = (item.title || '').trim();
                         if (!searchTitle) return;
                         const params = new URLSearchParams();
@@ -545,10 +680,7 @@ function HomeClient() {
                       </span>
                     </div>
                   ))}
-                  {(activeTab === 'globalRank'
-                    ? boxOfficeData.global
-                    : boxOfficeData.china
-                  ).length === 0 && (
+                  {boxOfficeItems.length === 0 && (
                     <div className='text-center text-gray-500 py-8 dark:text-gray-400'>
                       暂无数据
                     </div>
@@ -568,7 +700,10 @@ function HomeClient() {
                     className='text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
                     onClick={async () => {
                       await clearAllFavorites();
-                      setFavoriteItems([]);
+                      queryClient.setQueryData<FavoriteItem[]>(
+                        ['favorites', 'home'],
+                        []
+                      );
                     }}
                   >
                     清空
@@ -606,7 +741,7 @@ function HomeClient() {
                     ? '在看'
                     : '看过'}
                 </h2>
-                {doubanLoggedIn && doubanMineData[activeTab].length > 0 && (
+                {doubanLoggedIn && mineItems.length > 0 && (
                   <button
                     className='text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
                     onClick={() => handleRefresh(activeTab)}
@@ -627,7 +762,7 @@ function HomeClient() {
                     </div>
                   ))}
                 </div>
-              ) : doubanMineError && doubanMineData[activeTab].length === 0 ? (
+              ) : doubanMineError && mineItems.length === 0 ? (
                 // 错误状态
                 <div className='text-center text-gray-500 py-8 dark:text-gray-400'>
                   <p>{doubanMineError}</p>
@@ -642,7 +777,7 @@ function HomeClient() {
                 // 数据展示
                 <>
                   <div className='justify-start grid grid-cols-3 gap-x-4 gap-y-8 sm:gap-y-10 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8'>
-                    {doubanMineData[activeTab].map((item) => (
+                    {mineItems.map((item) => (
                       <div key={item.id} className='w-full'>
                         <VideoCard
                           from='douban'
@@ -653,51 +788,48 @@ function HomeClient() {
                         />
                       </div>
                     ))}
-                    {doubanMineData[activeTab].length === 0 &&
-                      !doubanMineLoading && (
-                        <div className='col-span-full text-center text-gray-500 py-8 dark:text-gray-400'>
-                          {doubanLoggedIn ? '暂无数据' : '请先登录豆瓣账号'}
-                          {!doubanLoggedIn && (
-                            <button
-                              className='ml-2 text-blue-500 hover:text-blue-600'
-                              onClick={() => setShowCookieModal(true)}
-                            >
-                              去登录
-                            </button>
-                          )}
-                        </div>
-                      )}
-                  </div>
-                  {/* 加载更多指示器 */}
-                  {doubanMineHasMore[activeTab] &&
-                    doubanMineData[activeTab].length > 0 && (
-                      <div
-                        ref={(el) => {
-                          if (el && el.offsetParent !== null) {
-                            (
-                              loadingRef as React.MutableRefObject<HTMLDivElement | null>
-                            ).current = el;
-                          }
-                        }}
-                        className='flex justify-center mt-12 py-8'
-                      >
-                        {doubanMineLoadingMore && (
-                          <div className='flex items-center gap-2'>
-                            <div className='animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500'></div>
-                            <span className='text-gray-600 dark:text-gray-400'>
-                              加载中...
-                            </span>
-                          </div>
+                    {mineItems.length === 0 && !doubanMineLoading && (
+                      <div className='col-span-full text-center text-gray-500 py-8 dark:text-gray-400'>
+                        {doubanLoggedIn ? '暂无数据' : '请先登录豆瓣账号'}
+                        {!doubanLoggedIn && (
+                          <button
+                            className='ml-2 text-blue-500 hover:text-blue-600'
+                            onClick={() => setShowCookieModal(true)}
+                          >
+                            去登录
+                          </button>
                         )}
                       </div>
                     )}
+                  </div>
+                  {/* 加载更多指示器 */}
+                  {doubanMineHasMore && mineItems.length > 0 && (
+                    <div
+                      ref={(el) => {
+                        if (el && el.offsetParent !== null) {
+                          (
+                            loadingRef as React.MutableRefObject<HTMLDivElement | null>
+                          ).current = el;
+                        }
+                      }}
+                      className='flex justify-center mt-12 py-8'
+                    >
+                      {doubanMineLoadingMore && (
+                        <div className='flex items-center gap-2'>
+                          <div className='animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500'></div>
+                          <span className='text-gray-600 dark:text-gray-400'>
+                            加载中...
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {/* 没有更多数据提示 */}
-                  {!doubanMineHasMore[activeTab] &&
-                    doubanMineData[activeTab].length > 0 && (
-                      <div className='text-center text-gray-500 py-8'>
-                        已加载全部
-                      </div>
-                    )}
+                  {!doubanMineHasMore && mineItems.length > 0 && (
+                    <div className='text-center text-gray-500 py-8'>
+                      已加载全部
+                    </div>
+                  )}
                 </>
               )}
             </section>

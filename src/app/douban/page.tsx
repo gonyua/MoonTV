@@ -2,9 +2,10 @@
 
 'use client';
 
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { getDoubanCategories, getDoubanList } from '@/lib/client/douban.client';
 import { DoubanItem, DoubanResult } from '@/lib/types';
@@ -15,30 +16,62 @@ import DoubanSelector from '@/components/DoubanSelector';
 import PageLayout from '@/components/PageLayout';
 import VideoCard from '@/components/VideoCard';
 
+function readPersistedSelection(key: string): {
+  primarySelection?: string;
+  secondarySelection?: string;
+} | null {
+  if (typeof window === 'undefined') return null;
+  const raw = sessionStorage.getItem(key);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object') return null;
+    const record = parsed as Record<string, unknown>;
+    return {
+      primarySelection:
+        typeof record.primarySelection === 'string'
+          ? record.primarySelection
+          : undefined,
+      secondarySelection:
+        typeof record.secondarySelection === 'string'
+          ? record.secondarySelection
+          : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writePersistedSelection(
+  key: string,
+  selection: { primarySelection: string; secondarySelection: string }
+) {
+  if (typeof window === 'undefined') return;
+  sessionStorage.setItem(key, JSON.stringify(selection));
+}
+
 function DoubanPageClient() {
   const searchParams = useSearchParams();
-  const [doubanData, setDoubanData] = useState<DoubanItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [currentPage, setCurrentPage] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [selectorsReady, setSelectorsReady] = useState(false);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const loadingRef = useRef<HTMLDivElement>(null);
-  const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const type = searchParams.get('type') || 'movie';
+  const selectionStorageKey = `selection:douban:${type}`;
 
   // 获取 runtimeConfig 中的自定义分类数据
   const [customCategories, setCustomCategories] = useState<
     Array<{ name: string; type: 'movie' | 'tv'; query: string }>
   >([]);
 
-  // 选择器状态 - 完全独立，不依赖URL参数
+  // 选择器状态 - 使用 sessionStorage 做“返回保持分类”
   const [primarySelection, setPrimarySelection] = useState<string>(() => {
+    const saved = readPersistedSelection(selectionStorageKey);
+    if (saved?.primarySelection != null) return saved.primarySelection;
     return type === 'movie' ? '热门' : '';
   });
   const [secondarySelection, setSecondarySelection] = useState<string>(() => {
+    const saved = readPersistedSelection(selectionStorageKey);
+    if (saved?.secondarySelection != null) return saved.secondarySelection;
     if (type === 'movie') return '全部';
     if (type === 'tv') return 'tv';
     if (type === 'show') return 'show';
@@ -53,85 +86,139 @@ function DoubanPageClient() {
     }
   }, []);
 
-  // 初始化时标记选择器为准备好状态
+  // 当 type 变化时恢复选择器状态（或回落到默认值）
   useEffect(() => {
-    // 短暂延迟确保初始状态设置完成
-    const timer = setTimeout(() => {
-      setSelectorsReady(true);
-    }, 50);
+    const saved = readPersistedSelection(selectionStorageKey);
 
-    return () => clearTimeout(timer);
-  }, []); // 只在组件挂载时执行一次
-
-  // type变化时立即重置selectorsReady（最高优先级）
-  useEffect(() => {
-    setSelectorsReady(false);
-    setLoading(true); // 立即显示loading状态
-  }, [type]);
-
-  // 当type变化时重置选择器状态
-  useEffect(() => {
     if (type === 'custom' && customCategories.length > 0) {
       // 自定义分类模式：优先选择 movie，如果没有 movie 则选择 tv
       const types = Array.from(
         new Set(customCategories.map((cat) => cat.type))
       );
       if (types.length > 0) {
-        // 优先选择 movie，如果没有 movie 则选择 tv
-        let selectedType = types[0]; // 默认选择第一个
-        if (types.includes('movie')) {
-          selectedType = 'movie';
-        } else {
-          selectedType = 'tv';
-        }
-        setPrimarySelection(selectedType);
+        const fallbackPrimary = types.includes('movie') ? 'movie' : 'tv';
+        const nextPrimary =
+          saved?.primarySelection &&
+          types.includes(saved.primarySelection as 'movie' | 'tv')
+            ? (saved.primarySelection as 'movie' | 'tv')
+            : fallbackPrimary;
 
-        // 设置选中类型的第一个分类的 query 作为二级选择
-        const firstCategory = customCategories.find(
-          (cat) => cat.type === selectedType
+        const available = customCategories.filter(
+          (c) => c.type === nextPrimary
         );
-        if (firstCategory) {
-          setSecondarySelection(firstCategory.query);
-        }
+        const fallbackSecondary =
+          available[0]?.query || customCategories[0]?.query;
+        const nextSecondary =
+          saved?.secondarySelection &&
+          available.some((c) => c.query === saved.secondarySelection)
+            ? saved.secondarySelection
+            : fallbackSecondary;
+
+        setPrimarySelection(nextPrimary);
+        setSecondarySelection(nextSecondary);
       }
     } else {
       // 原有逻辑
       if (type === 'movie') {
-        setPrimarySelection('热门');
-        setSecondarySelection('全部');
+        setPrimarySelection(saved?.primarySelection ?? '热门');
+        setSecondarySelection(saved?.secondarySelection ?? '全部');
       } else if (type === 'tv') {
-        setPrimarySelection('');
-        setSecondarySelection('tv');
+        setPrimarySelection(saved?.primarySelection ?? '');
+        setSecondarySelection(saved?.secondarySelection ?? 'tv');
       } else if (type === 'show') {
-        setPrimarySelection('');
-        setSecondarySelection('show');
+        setPrimarySelection(saved?.primarySelection ?? '');
+        setSecondarySelection(saved?.secondarySelection ?? 'show');
       } else {
-        setPrimarySelection('');
-        setSecondarySelection('全部');
+        setPrimarySelection(saved?.primarySelection ?? '');
+        setSecondarySelection(saved?.secondarySelection ?? '全部');
       }
     }
+  }, [customCategories, selectionStorageKey, type]);
 
-    // 使用短暂延迟确保状态更新完成后标记选择器准备好
-    const timer = setTimeout(() => {
-      setSelectorsReady(true);
-    }, 50);
-
-    return () => clearTimeout(timer);
-  }, [type, customCategories]);
+  // 选择器状态持久化（返回列表页时复用）
+  useEffect(() => {
+    if (type === 'custom' && customCategories.length === 0) return;
+    writePersistedSelection(selectionStorageKey, {
+      primarySelection,
+      secondarySelection,
+    });
+  }, [
+    customCategories.length,
+    primarySelection,
+    secondarySelection,
+    selectionStorageKey,
+    type,
+  ]);
 
   // 生成骨架屏数据
   const skeletonData = Array.from({ length: 25 }, (_, index) => index);
 
+  const selection = useMemo(() => {
+    if (type === 'custom') {
+      if (customCategories.length === 0) return null;
+
+      const types = Array.from(new Set(customCategories.map((c) => c.type)));
+      const defaultPrimary = types.includes('movie') ? 'movie' : types[0];
+      const primary = types.includes(primarySelection as 'movie' | 'tv')
+        ? (primarySelection as 'movie' | 'tv')
+        : defaultPrimary;
+
+      const available = customCategories.filter((c) => c.type === primary);
+      const defaultSecondary =
+        available[0]?.query || customCategories[0]?.query;
+      const secondary = available.some((c) => c.query === secondarySelection)
+        ? secondarySelection
+        : defaultSecondary;
+
+      return { primary, secondary };
+    }
+
+    if (type === 'movie') {
+      const primary = primarySelection || '热门';
+      const secondary =
+        secondarySelection && !['tv', 'show'].includes(secondarySelection)
+          ? secondarySelection
+          : '全部';
+
+      return { primary, secondary };
+    }
+
+    if (type === 'tv') {
+      return {
+        primary: '',
+        secondary:
+          secondarySelection && secondarySelection !== '全部'
+            ? secondarySelection
+            : 'tv',
+      };
+    }
+
+    if (type === 'show') {
+      return {
+        primary: '',
+        secondary:
+          secondarySelection && secondarySelection !== '全部'
+            ? secondarySelection
+            : 'show',
+      };
+    }
+
+    return { primary: '', secondary: '全部' };
+  }, [customCategories, primarySelection, secondarySelection, type]);
+  const pageLimit = 25;
+
   // 生成API请求参数的辅助函数
   const getRequestParams = useCallback(
     (pageStart: number) => {
+      if (!selection) return null;
+
       // 当type为tv或show时，kind统一为'tv'，category使用type本身
       if (type === 'tv' || type === 'show') {
         return {
           kind: 'tv' as const,
           category: type,
-          type: secondarySelection,
-          pageLimit: 25,
+          type: selection.secondary,
+          pageLimit,
           pageStart,
         };
       }
@@ -139,156 +226,132 @@ function DoubanPageClient() {
       // 电影类型保持原逻辑
       return {
         kind: type as 'tv' | 'movie',
-        category: primarySelection,
-        type: secondarySelection,
-        pageLimit: 25,
+        category: selection.primary,
+        type: selection.secondary,
+        pageLimit,
         pageStart,
       };
     },
-    [type, primarySelection, secondarySelection]
+    [pageLimit, selection, type]
   );
 
-  // 防抖的数据加载函数
-  const loadInitialData = useCallback(async () => {
-    try {
-      setLoading(true);
-      let data: DoubanResult;
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isPending } =
+    useInfiniteQuery<DoubanResult>({
+      queryKey: [
+        'douban',
+        {
+          type,
+          primary: selection?.primary ?? null,
+          secondary: selection?.secondary ?? null,
+        },
+      ],
+      enabled: Boolean(selection),
+      initialPageParam: 0,
+      queryFn: async ({ pageParam }) => {
+        const pageStart = Number(pageParam) || 0;
 
-      if (type === 'custom') {
-        // 自定义分类模式：根据选中的一级和二级选项获取对应的分类
-        const selectedCategory = customCategories.find(
-          (cat) =>
-            cat.type === primarySelection && cat.query === secondarySelection
-        );
+        if (type === 'custom') {
+          if (!selection) {
+            throw new Error('自定义分类未就绪');
+          }
 
-        if (selectedCategory) {
-          data = await getDoubanList({
-            tag: selectedCategory.query,
-            type: selectedCategory.type,
-            pageLimit: 25,
-            pageStart: 0,
+          const result = await getDoubanList({
+            tag: selection.secondary,
+            type: selection.primary as 'movie' | 'tv',
+            pageLimit,
+            pageStart,
           });
-        } else {
-          throw new Error('没有找到对应的分类');
+          if (result.code !== 200) {
+            throw new Error(result.message || '获取数据失败');
+          }
+          return result;
         }
-      } else {
-        data = await getDoubanCategories(getRequestParams(0));
-      }
 
-      if (data.code === 200) {
-        setDoubanData(data.list);
-        setHasMore(data.list.length === 25);
-        setLoading(false);
-      } else {
-        throw new Error(data.message || '获取数据失败');
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  }, [
-    type,
-    primarySelection,
-    secondarySelection,
-    getRequestParams,
-    customCategories,
-  ]);
+        const params = getRequestParams(pageStart);
+        if (!params) {
+          throw new Error('分类未就绪');
+        }
 
-  // 只在选择器准备好后才加载数据
+        const result = await getDoubanCategories(params);
+        if (result.code !== 200) {
+          throw new Error(result.message || '获取数据失败');
+        }
+        return result;
+      },
+      getNextPageParam: (lastPage, allPages) => {
+        if (lastPage.list.length < pageLimit) return undefined;
+        return allPages.length * pageLimit;
+      },
+      staleTime: 1000 * 60 * 5,
+      gcTime: 1000 * 60 * 30,
+    });
+
+  const doubanData: DoubanItem[] = data?.pages.flatMap((p) => p.list) ?? [];
+  const showSkeleton = !selection || (isPending && doubanData.length === 0);
+
+  const scrollKey = useMemo(() => {
+    return `scroll:douban:${type}:${selection?.primary ?? ''}:${
+      selection?.secondary ?? ''
+    }`;
+  }, [selection?.primary, selection?.secondary, type]);
+
+  const hasRestoredScrollRef = useRef(false);
+  const ignoreScrollSaveRef = useRef(false);
+  const lastSavedScrollTopRef = useRef(0);
+
   useEffect(() => {
-    // 只有在选择器准备好时才开始加载
-    if (!selectorsReady) {
-      return;
-    }
+    hasRestoredScrollRef.current = false;
+    ignoreScrollSaveRef.current = false;
+    lastSavedScrollTopRef.current = 0;
+  }, [scrollKey]);
 
-    // 重置页面状态
-    setDoubanData([]);
-    setCurrentPage(0);
-    setHasMore(true);
-    setIsLoadingMore(false);
+  // 记录列表滚动位置（body 为滚动容器）
+  useEffect(() => {
+    if (!selection) return;
 
-    // 清除之前的防抖定时器
-    if (debounceTimeoutRef.current) {
-      clearTimeout(debounceTimeoutRef.current);
-    }
-
-    // 使用防抖机制加载数据，避免连续状态更新触发多次请求
-    debounceTimeoutRef.current = setTimeout(() => {
-      loadInitialData();
-    }, 100); // 100ms 防抖延迟
-
-    // 清理函数
-    return () => {
-      if (debounceTimeoutRef.current) {
-        clearTimeout(debounceTimeoutRef.current);
-      }
+    let rafId = 0;
+    const save = () => {
+      if (ignoreScrollSaveRef.current) return;
+      const top = document.body.scrollTop;
+      lastSavedScrollTopRef.current = top;
+      sessionStorage.setItem(scrollKey, String(top));
     };
-  }, [
-    selectorsReady,
-    type,
-    primarySelection,
-    secondarySelection,
-    loadInitialData,
-  ]);
 
-  // 单独处理 currentPage 变化（加载更多）
+    const onScroll = () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(save);
+    };
+
+    document.body.addEventListener('scroll', onScroll, { passive: true });
+
+    return () => {
+      document.body.removeEventListener('scroll', onScroll);
+      if (rafId) cancelAnimationFrame(rafId);
+      sessionStorage.setItem(scrollKey, String(lastSavedScrollTopRef.current));
+    };
+  }, [scrollKey, selection]);
+
+  // 数据已就绪时恢复滚动位置（返回列表页场景）
   useEffect(() => {
-    if (currentPage > 0) {
-      const fetchMoreData = async () => {
-        try {
-          setIsLoadingMore(true);
+    if (!selection) return;
+    if (hasRestoredScrollRef.current) return;
+    if (doubanData.length === 0) return;
 
-          let data: DoubanResult;
-          if (type === 'custom') {
-            // 自定义分类模式：根据选中的一级和二级选项获取对应的分类
-            const selectedCategory = customCategories.find(
-              (cat) =>
-                cat.type === primarySelection &&
-                cat.query === secondarySelection
-            );
+    const saved = sessionStorage.getItem(scrollKey);
+    if (!saved) return;
 
-            if (selectedCategory) {
-              data = await getDoubanList({
-                tag: selectedCategory.query,
-                type: selectedCategory.type,
-                pageLimit: 25,
-                pageStart: currentPage * 25,
-              });
-            } else {
-              throw new Error('没有找到对应的分类');
-            }
-          } else {
-            data = await getDoubanCategories(
-              getRequestParams(currentPage * 25)
-            );
-          }
-
-          if (data.code === 200) {
-            setDoubanData((prev) => [...prev, ...data.list]);
-            setHasMore(data.list.length === 25);
-          } else {
-            throw new Error(data.message || '获取数据失败');
-          }
-        } catch (err) {
-          console.error(err);
-        } finally {
-          setIsLoadingMore(false);
-        }
-      };
-
-      fetchMoreData();
-    }
-  }, [
-    currentPage,
-    type,
-    primarySelection,
-    secondarySelection,
-    customCategories,
-  ]);
+    hasRestoredScrollRef.current = true;
+    requestAnimationFrame(() => {
+      const top = Number(saved) || 0;
+      lastSavedScrollTopRef.current = top;
+      document.body.scrollTo(0, top);
+    });
+  }, [doubanData.length, scrollKey, selection]);
 
   // 设置滚动监听
   useEffect(() => {
     // 如果没有更多数据或正在加载，则不设置监听
-    if (!hasMore || isLoadingMore || loading) {
+    if (!hasNextPage || isFetchingNextPage) {
       return;
     }
 
@@ -299,8 +362,8 @@ function DoubanPageClient() {
 
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && hasMore && !isLoadingMore) {
-          setCurrentPage((prev) => prev + 1);
+        if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage();
         }
       },
       { threshold: 0.1 }
@@ -314,15 +377,12 @@ function DoubanPageClient() {
         observerRef.current.disconnect();
       }
     };
-  }, [hasMore, isLoadingMore, loading]);
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
   // 处理选择器变化
   const handlePrimaryChange = useCallback(
     (value: string) => {
-      // 只有当值真正改变时才设置loading状态
       if (value !== primarySelection) {
-        setLoading(true);
-
         // 如果是自定义分类模式，同时更新一级和二级选择器
         if (type === 'custom' && customCategories.length > 0) {
           const firstCategory = customCategories.find(
@@ -345,9 +405,7 @@ function DoubanPageClient() {
 
   const handleSecondaryChange = useCallback(
     (value: string) => {
-      // 只有当值真正改变时才设置loading状态
       if (value !== secondarySelection) {
-        setLoading(true);
         setSecondarySelection(value);
       }
     },
@@ -417,12 +475,26 @@ function DoubanPageClient() {
         <div className='max-w-[100%] mx-auto mt-4 overflow-visible'>
           {/* 内容网格 */}
           <div className='justify-start grid grid-cols-3 gap-x-4 gap-y-8 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))] sm:gap-x-8 sm:gap-y-20'>
-            {loading || !selectorsReady
+            {showSkeleton
               ? // 显示骨架屏
                 skeletonData.map((index) => <DoubanCardSkeleton key={index} />)
               : // 显示实际数据
                 doubanData.map((item, index) => (
-                  <div key={`${item.title}-${index}`} className='w-full'>
+                  <div
+                    key={`${item.title}-${index}`}
+                    className='w-full'
+                    onClickCapture={() => {
+                      const top = document.body.scrollTop;
+                      ignoreScrollSaveRef.current = true;
+                      lastSavedScrollTopRef.current = top;
+                      sessionStorage.setItem(scrollKey, String(top));
+
+                      // 防止因路由切换触发的滚动重置覆盖掉刚保存的值
+                      window.setTimeout(() => {
+                        ignoreScrollSaveRef.current = false;
+                      }, 1000);
+                    }}
+                  >
                     <VideoCard
                       from='douban'
                       title={item.title}
@@ -437,7 +509,7 @@ function DoubanPageClient() {
           </div>
 
           {/* 加载更多指示器 */}
-          {hasMore && !loading && (
+          {hasNextPage && !showSkeleton && doubanData.length > 0 && (
             <div
               ref={(el) => {
                 if (el && el.offsetParent !== null) {
@@ -448,7 +520,7 @@ function DoubanPageClient() {
               }}
               className='flex justify-center mt-12 py-8'
             >
-              {isLoadingMore && (
+              {isFetchingNextPage && (
                 <div className='flex items-center gap-2'>
                   <div className='animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500'></div>
                   <span className='text-gray-600'>加载中...</span>
@@ -458,12 +530,12 @@ function DoubanPageClient() {
           )}
 
           {/* 没有更多数据提示 */}
-          {!hasMore && doubanData.length > 0 && (
+          {!hasNextPage && doubanData.length > 0 && !showSkeleton && (
             <div className='text-center text-gray-500 py-8'>已加载全部内容</div>
           )}
 
           {/* 空状态 */}
-          {!loading && doubanData.length === 0 && (
+          {!showSkeleton && doubanData.length === 0 && (
             <div className='text-center text-gray-500 py-8'>暂无相关内容</div>
           )}
         </div>

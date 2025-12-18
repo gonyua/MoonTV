@@ -1,9 +1,17 @@
 /* eslint-disable react-hooks/exhaustive-deps, @typescript-eslint/no-explicit-any */
 'use client';
 
+import { useQuery } from '@tanstack/react-query';
 import { ChevronUp, Search, X } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import {
   addSearchHistory,
@@ -25,10 +33,15 @@ function SearchPageClient() {
 
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [showResults, setShowResults] = useState(false);
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const urlQuery = searchParams.get('q') ?? '';
+  const normalizedUrlQuery = urlQuery.trim().replace(/\s+/g, ' ');
+  const showResults = Boolean(normalizedUrlQuery);
+
+  const [searchQuery, setSearchQuery] = useState(normalizedUrlQuery);
+
+  const hasRestoredScrollRef = useRef(false);
+  const ignoreScrollSaveRef = useRef(false);
+  const lastSavedScrollTopRef = useRef(0);
 
   // 获取默认聚合设置：只读取用户本地设置，默认为 true
   const getDefaultAggregate = () => {
@@ -43,6 +56,58 @@ function SearchPageClient() {
 
   const [viewMode, setViewMode] = useState<'agg' | 'all'>(() => {
     return getDefaultAggregate() ? 'agg' : 'all';
+  });
+
+  const scrollKey = useMemo(() => {
+    if (!normalizedUrlQuery) return null;
+    return `scroll:search:${normalizedUrlQuery}:${viewMode}`;
+  }, [normalizedUrlQuery, viewMode]);
+
+  const { data: searchResults = [], isPending } = useQuery<SearchResult[]>({
+    queryKey: ['search', { q: normalizedUrlQuery }],
+    enabled: Boolean(normalizedUrlQuery),
+    queryFn: async () => {
+      const response = await fetch(
+        `/api/search?q=${encodeURIComponent(normalizedUrlQuery)}`
+      );
+      if (!response.ok) {
+        throw new Error(`搜索请求失败: ${response.status}`);
+      }
+
+      const data = (await response.json()) as { results?: SearchResult[] };
+      const results = Array.isArray(data.results) ? data.results : [];
+      return results;
+    },
+    select: (results) => {
+      const query = normalizedUrlQuery;
+      return [...results].sort((a, b) => {
+        // 优先排序：标题与搜索词完全一致的排在前面
+        const aExactMatch = a.title === query;
+        const bExactMatch = b.title === query;
+
+        if (aExactMatch && !bExactMatch) return -1;
+        if (!aExactMatch && bExactMatch) return 1;
+
+        // 如果都匹配或都不匹配，则按原来的逻辑排序
+        if (a.year === b.year) {
+          return a.title.localeCompare(b.title);
+        } else {
+          // 处理 unknown 的情况
+          if (a.year === 'unknown' && b.year === 'unknown') {
+            return 0;
+          } else if (a.year === 'unknown') {
+            return 1; // a 排在后面
+          } else if (b.year === 'unknown') {
+            return -1; // b 排在后面
+          } else {
+            // 都是数字年份，按数字大小排序（大的在前面）
+            return parseInt(a.year) > parseInt(b.year) ? -1 : 1;
+          }
+        }
+      });
+    },
+    staleTime: 1000 * 60 * 5,
+    gcTime: 1000 * 60 * 30,
   });
 
   // 聚合后的结果（按标题和年份分组）
@@ -89,11 +154,11 @@ function SearchPageClient() {
         }
       }
     });
-  }, [searchResults]);
+  }, [searchQuery, searchResults]);
 
   useEffect(() => {
     // 无搜索参数时聚焦搜索框
-    !searchParams.get('q') && document.getElementById('searchInput')?.focus();
+    !showResults && document.getElementById('searchInput')?.focus();
 
     // 初始加载搜索历史
     getSearchHistory().then(setSearchHistory);
@@ -146,60 +211,11 @@ function SearchPageClient() {
 
   useEffect(() => {
     // 当搜索参数变化时更新搜索状态
-    const query = searchParams.get('q');
-    if (query) {
-      setSearchQuery(query);
-      fetchSearchResults(query);
-
-      // 保存到搜索历史 (事件监听会自动更新界面)
-      addSearchHistory(query);
-    } else {
-      setShowResults(false);
+    if (showResults) {
+      setSearchQuery(normalizedUrlQuery);
+      addSearchHistory(normalizedUrlQuery);
     }
-  }, [searchParams]);
-
-  const fetchSearchResults = async (query: string) => {
-    try {
-      setIsLoading(true);
-      const response = await fetch(
-        `/api/search?q=${encodeURIComponent(query.trim())}`
-      );
-      const data = await response.json();
-      const results = data.results;
-      setSearchResults(
-        results.sort((a: SearchResult, b: SearchResult) => {
-          // 优先排序：标题与搜索词完全一致的排在前面
-          const aExactMatch = a.title === query.trim();
-          const bExactMatch = b.title === query.trim();
-
-          if (aExactMatch && !bExactMatch) return -1;
-          if (!aExactMatch && bExactMatch) return 1;
-
-          // 如果都匹配或都不匹配，则按原来的逻辑排序
-          if (a.year === b.year) {
-            return a.title.localeCompare(b.title);
-          } else {
-            // 处理 unknown 的情况
-            if (a.year === 'unknown' && b.year === 'unknown') {
-              return 0;
-            } else if (a.year === 'unknown') {
-              return 1; // a 排在后面
-            } else if (b.year === 'unknown') {
-              return -1; // b 排在后面
-            } else {
-              // 都是数字年份，按数字大小排序（大的在前面）
-              return parseInt(a.year) > parseInt(b.year) ? -1 : 1;
-            }
-          }
-        })
-      );
-      setShowResults(true);
-    } catch (error) {
-      setSearchResults([]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  }, [normalizedUrlQuery, showResults]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -208,16 +224,91 @@ function SearchPageClient() {
 
     // 回显搜索框
     setSearchQuery(trimmed);
-    setIsLoading(true);
-    setShowResults(true);
 
     router.push(`/search?q=${encodeURIComponent(trimmed)}`);
-    // 直接发请求
-    fetchSearchResults(trimmed);
-
-    // 保存到搜索历史 (事件监听会自动更新界面)
-    addSearchHistory(trimmed);
   };
+
+  useEffect(() => {
+    hasRestoredScrollRef.current = false;
+    ignoreScrollSaveRef.current = false;
+    lastSavedScrollTopRef.current = 0;
+  }, [scrollKey]);
+
+  // 记录列表滚动位置（body 为滚动容器）
+  useEffect(() => {
+    if (!scrollKey) return;
+
+    let rafId = 0;
+    const save = () => {
+      if (ignoreScrollSaveRef.current) return;
+      const top = document.body.scrollTop;
+      lastSavedScrollTopRef.current = top;
+      sessionStorage.setItem(scrollKey, String(top));
+    };
+
+    const onScroll = () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(save);
+    };
+
+    document.body.addEventListener('scroll', onScroll, { passive: true });
+
+    return () => {
+      document.body.removeEventListener('scroll', onScroll);
+      if (rafId) cancelAnimationFrame(rafId);
+      sessionStorage.setItem(scrollKey, String(lastSavedScrollTopRef.current));
+    };
+  }, [scrollKey]);
+
+  // 数据已就绪时恢复滚动位置（返回列表页场景）
+  useEffect(() => {
+    if (!scrollKey) return;
+    if (hasRestoredScrollRef.current) return;
+    if (searchResults.length === 0) return;
+
+    const saved = sessionStorage.getItem(scrollKey);
+    if (!saved) return;
+
+    hasRestoredScrollRef.current = true;
+    requestAnimationFrame(() => {
+      const top = Number(saved) || 0;
+      lastSavedScrollTopRef.current = top;
+      document.body.scrollTo(0, top);
+    });
+  }, [scrollKey, searchResults.length]);
+
+  const handleCardClickCapture = useCallback(() => {
+    if (!scrollKey) return;
+    const top = document.body.scrollTop;
+    ignoreScrollSaveRef.current = true;
+    lastSavedScrollTopRef.current = top;
+    sessionStorage.setItem(scrollKey, String(top));
+
+    window.setTimeout(() => {
+      ignoreScrollSaveRef.current = false;
+    }, 1000);
+  }, [scrollKey]);
+
+  // 兜底：用原生 capture 监听，保证“点卡片跳转”时一定会先保存滚动（避免路由切换把 scrollTop=0 写回）
+  useEffect(() => {
+    if (!scrollKey) return;
+
+    const onDocumentClickCapture = (e: MouseEvent) => {
+      const target = e.target;
+      if (!(target instanceof Element)) return;
+
+      // VideoCard 根节点：className 包含 `group relative w-full ...`
+      const card = target.closest('div.group.relative.w-full');
+      if (!card) return;
+
+      handleCardClickCapture();
+    };
+
+    document.addEventListener('click', onDocumentClickCapture, true);
+    return () => {
+      document.removeEventListener('click', onDocumentClickCapture, true);
+    };
+  }, [handleCardClickCapture, scrollKey]);
 
   // 返回顶部功能
   const scrollToTop = () => {
@@ -255,7 +346,7 @@ function SearchPageClient() {
 
         {/* 搜索结果或搜索历史 */}
         <div className='max-w-[95%] mx-auto mt-12 overflow-visible'>
-          {isLoading ? (
+          {showResults && isPending ? (
             <div className='flex justify-center items-center h-40'>
               <div className='animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500'></div>
             </div>
@@ -276,9 +367,14 @@ function SearchPageClient() {
                       type='checkbox'
                       className='sr-only peer'
                       checked={viewMode === 'agg'}
-                      onChange={() =>
-                        setViewMode(viewMode === 'agg' ? 'all' : 'agg')
-                      }
+                      onChange={() => {
+                        const next = viewMode === 'agg' ? 'all' : 'agg';
+                        setViewMode(next);
+                        localStorage.setItem(
+                          'defaultAggregateSearch',
+                          JSON.stringify(next === 'agg')
+                        );
+                      }}
                     />
                     <div className='w-9 h-5 bg-gray-300 rounded-full peer-checked:bg-orange-500 transition-colors dark:bg-gray-600'></div>
                     <div className='absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4'></div>
@@ -292,7 +388,11 @@ function SearchPageClient() {
                 {viewMode === 'agg'
                   ? aggregatedResults.map(([mapKey, group]) => {
                       return (
-                        <div key={`agg-${mapKey}`} className='w-full'>
+                        <div
+                          key={`agg-${mapKey}`}
+                          className='w-full'
+                          onClickCapture={handleCardClickCapture}
+                        >
                           <VideoCard
                             from='search'
                             items={group}
@@ -309,6 +409,7 @@ function SearchPageClient() {
                       <div
                         key={`all-${item.source}-${item.id}`}
                         className='w-full'
+                        onClickCapture={handleCardClickCapture}
                       >
                         <VideoCard
                           id={item.id}
