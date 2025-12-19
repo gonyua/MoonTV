@@ -415,16 +415,16 @@ function DoubanPageClient() {
     [secondarySelection]
   );
 
-  const getPageTitle = () => {
-    // 根据 type 生成标题
-    return type === 'movie'
-      ? '电影'
-      : type === 'tv'
-      ? '电视剧'
-      : type === 'show'
-      ? '综艺'
-      : '自定义';
-  };
+  // const getPageTitle = () => {
+  //   // 根据 type 生成标题
+  //   return type === 'movie'
+  //     ? '电影'
+  //     : type === 'tv'
+  //     ? '电视剧'
+  //     : type === 'show'
+  //     ? '综艺'
+  //     : '自定义';
+  // };
 
   const getActivePath = () => {
     const params = new URLSearchParams();
@@ -441,14 +441,14 @@ function DoubanPageClient() {
         {/* 页面标题和选择器 */}
         <div className='mb-6 sm:mb-8 space-y-4 sm:space-y-6'>
           {/* 页面标题 */}
-          <div>
+          {/* <div>
             <h1 className='text-2xl sm:text-3xl font-bold text-gray-800 mb-1 sm:mb-2 dark:text-gray-200'>
               {getPageTitle()}
             </h1>
             <p className='text-sm sm:text-base text-gray-600 dark:text-gray-400'>
               来自豆瓣的精选内容
             </p>
-          </div>
+          </div> */}
 
           {/* 选择器组件 */}
           {type !== 'custom' ? (

@@ -88,6 +88,7 @@ export async function GET(request: Request) {
     return handleTop250(pageStart);
   }
 
+  // “标签检索/Top250”，参数是 type=movie|tv + tag（如 热门/最新/经典/美剧 等），，，服务豆瓣页的“自定义分类模式”/orion，其它页面/模式都不用它。
   const target = `https://movie.douban.com/j/search_subjects?type=${type}&tag=${tag}&sort=recommend&page_limit=${pageSize}&page_start=${pageStart}`;
 
   try {
