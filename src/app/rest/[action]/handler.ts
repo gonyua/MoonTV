@@ -1,10 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
+export type MusicSource = 'migu' | 'netease' | 'qq' | 'kuwo';
 
-export const runtime = 'edge';
-
-type MusicSource = 'migu' | 'netease' | 'qq' | 'kuwo';
-
-type MusicTrack = {
+export type MusicTrack = {
   uid: string;
   source: MusicSource;
   displayIndex: number;
@@ -21,15 +17,21 @@ type MusicTrack = {
   quality: 'normal' | 'lossless';
 };
 
-function clampInt(
-  value: string | null,
-  fallback: number,
-  min: number,
-  max: number
-) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return fallback;
-  return Math.min(max, Math.max(min, Math.trunc(n)));
+export type MusicTrackDetail = {
+  title: string;
+  artist: string;
+  album: string;
+  cover: string | null;
+  audioUrl: string | null;
+  lrc: string | null;
+  lrcUrl: string | null;
+  detailsLoaded: boolean;
+  quality: 'normal' | 'lossless';
+};
+
+function clampLimit(limit: number) {
+  if (!Number.isFinite(limit)) return 10;
+  return Math.min(50, Math.max(1, Math.trunc(limit)));
 }
 
 async function fetchJson(url: string, timeoutMs: number): Promise<unknown> {
@@ -57,22 +59,6 @@ async function fetchText(
   } finally {
     clearTimeout(timeoutId);
   }
-}
-
-function addCorsHeaders(headers: Headers) {
-  headers.set('Access-Control-Allow-Origin', '*');
-  headers.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  headers.set('Access-Control-Allow-Headers', 'Content-Type, Range');
-}
-
-function jsonResponse(
-  data: unknown,
-  init?: { status?: number; headers?: HeadersInit }
-) {
-  const headers = new Headers(init?.headers);
-  addCorsHeaders(headers);
-  headers.set('Cache-Control', 'no-store');
-  return NextResponse.json(data, { status: init?.status, headers });
 }
 
 function normalizeMiguUrl(url: string | null): string | null {
@@ -108,7 +94,7 @@ async function searchFromMigu(
     const n = Number(it?.n) || 0;
     const title = String(it?.title ?? '');
     const artist = String(it?.singer ?? '');
-    const uid = `migu-${keyword}-${n}-${title}-${artist}`;
+    const uid = `migu-${n}-${keyword}`;
     const track: MusicTrack = {
       uid,
       source: 'migu',
@@ -211,19 +197,20 @@ async function searchFromSayqz(
       artist: String(it?.artist ?? ''),
       album: String(it?.album ?? ''),
       cover: it?.pic ? String(it.pic) : null,
-      audioUrl: `/api/music?action=stream&source=${encodeURIComponent(
-        source
-      )}&id=${encodeURIComponent(id)}`,
+      audioUrl: null,
       lrc: null,
       lrcUrl: it?.lrc ? String(it.lrc) : null,
-      detailsLoaded: true,
+      detailsLoaded: false,
       quality: 'normal',
     };
     return [track];
   });
 }
 
-async function getMiguDetail(keyword: string, n: number) {
+export async function getMiguDetail(
+  keyword: string,
+  n: number
+): Promise<MusicTrackDetail | null> {
   const url = `https://api-v1.cenguigui.cn/api/mg_music/?msg=${encodeURIComponent(
     keyword
   )}&n=${encodeURIComponent(n)}&type=json&br=1`;
@@ -247,6 +234,7 @@ async function getMiguDetail(keyword: string, n: number) {
   return {
     title: String(data.title ?? ''),
     artist: String(data.singer ?? ''),
+    album: '',
     cover: data.cover ? String(data.cover) : null,
     audioUrl: normalizeMiguUrl(data.music_url ? String(data.music_url) : null),
     lrcUrl,
@@ -256,7 +244,9 @@ async function getMiguDetail(keyword: string, n: number) {
   };
 }
 
-async function getNeteaseDetail(id: string) {
+export async function getNeteaseDetail(
+  id: string
+): Promise<MusicTrackDetail | null> {
   const url = `https://api.cenguigui.cn/api/netease/music_v1.php?id=${encodeURIComponent(
     id
   )}&type=json&level=lossless`;
@@ -292,28 +282,10 @@ async function getNeteaseDetail(id: string) {
   };
 }
 
-async function getSayqzDetail(source: 'qq' | 'kuwo', id: string) {
-  const lrcUrl = `https://music-dl.sayqz.com/api/?source=${encodeURIComponent(
-    source
-  )}&id=${encodeURIComponent(id)}&type=lrc`;
-  const lrc = await fetchText(lrcUrl, 8000);
-  return {
-    audioUrl: `/api/music?action=stream&source=${encodeURIComponent(
-      source
-    )}&id=${encodeURIComponent(id)}`,
-    lrcUrl,
-    lrc,
-    detailsLoaded: true,
-    quality: 'normal' as const,
-  };
-}
-
-async function handleStream(
-  request: NextRequest,
+export async function resolveSayqzStreamLocation(
   source: 'qq' | 'kuwo',
   id: string
-) {
-  const range = request.headers.get('range') ?? undefined;
+): Promise<string | null> {
   const first = await fetch(
     `https://music-dl.sayqz.com/api/?source=${encodeURIComponent(
       source
@@ -321,37 +293,7 @@ async function handleStream(
     { redirect: 'manual' }
   );
 
-  const location = first.headers.get('location');
-  if (!location) {
-    return jsonResponse({ error: '播放地址获取失败' }, { status: 502 });
-  }
-
-  const audioRes = await fetch(location, {
-    headers: range ? { Range: range } : undefined,
-  });
-
-  if (!audioRes.body) {
-    return jsonResponse({ error: '播放资源无内容' }, { status: 502 });
-  }
-
-  const headers = new Headers();
-  addCorsHeaders(headers);
-  headers.set('Cache-Control', 'no-store');
-
-  const passHeaders = [
-    'content-type',
-    'content-length',
-    'accept-ranges',
-    'content-range',
-    'etag',
-    'last-modified',
-  ] as const;
-  for (const key of passHeaders) {
-    const value = audioRes.headers.get(key);
-    if (value) headers.set(key, value);
-  }
-
-  return new Response(audioRes.body, { status: audioRes.status, headers });
+  return first.headers.get('location');
 }
 
 function parseSources(value: string | null): MusicSource[] {
@@ -370,136 +312,58 @@ function parseSources(value: string | null): MusicSource[] {
   return out.length ? out : all;
 }
 
-function limitForSource(
+async function searchAllTracks(
+  keyword: string,
+  sources: MusicSource[],
   searchParams: URLSearchParams,
-  source: MusicSource,
-  fallback: number
-) {
-  return clampInt(searchParams.get(`limit_${source}`), fallback, 1, 50);
+  fallbackLimit: number
+): Promise<{
+  merged: MusicTrack[];
+  bySource: Partial<Record<MusicSource, number>>;
+}> {
+  const tasks = sources.map(async (src) => {
+    if (src === 'migu') return await searchFromMigu(keyword, fallbackLimit);
+    if (src === 'netease')
+      return await searchFromNetease(keyword, fallbackLimit);
+    if (src === 'qq')
+      return await searchFromSayqz(keyword, fallbackLimit, 'qq');
+    return await searchFromSayqz(keyword, fallbackLimit, 'kuwo');
+  });
+
+  const settled = await Promise.allSettled(tasks);
+  const merged: MusicTrack[] = [];
+  // const seen = new Set<string>();
+  const bySource: Partial<Record<MusicSource, number>> = {};
+
+  for (let i = 0; i < settled.length; i++) {
+    const src = sources[i];
+    const res = settled[i];
+    if (res.status !== 'fulfilled') continue;
+    let count = 0;
+    for (const track of res.value) {
+      // if (!track?.uid) continue;
+      // if (seen.has(track.uid)) continue;
+      // seen.add(track.uid);
+      merged.push(track);
+      count++;
+    }
+    bySource[src] = count;
+  }
+
+  return { merged, bySource };
 }
 
-export async function OPTIONS() {
-  const headers = new Headers();
-  addCorsHeaders(headers);
-  headers.set('Cache-Control', 'no-store');
-  return new Response(null, { status: 204, headers });
-}
-
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const action = searchParams.get('action');
-  const source = searchParams.get('source') as MusicSource | null;
-
-  if (!action)
-    return jsonResponse({ error: 'Missing action' }, { status: 400 });
-
-  if (action === 'stream') {
-    if (source !== 'qq' && source !== 'kuwo') {
-      return jsonResponse({ error: 'Invalid source' }, { status: 400 });
-    }
-    const id = searchParams.get('id');
-    if (!id) return jsonResponse({ error: 'Missing id' }, { status: 400 });
-    return handleStream(request, source, id);
-  }
-
-  if (action === 'search') {
-    if (
-      source !== 'migu' &&
-      source !== 'netease' &&
-      source !== 'qq' &&
-      source !== 'kuwo'
-    ) {
-      return jsonResponse({ error: 'Invalid source' }, { status: 400 });
-    }
-    const keyword = searchParams.get('keyword')?.trim() ?? '';
-    const limit = clampInt(searchParams.get('limit'), 10, 1, 50);
-    if (!keyword) return jsonResponse({ code: 200, data: [] });
-
-    const data =
-      source === 'migu'
-        ? await searchFromMigu(keyword, limit)
-        : source === 'netease'
-        ? await searchFromNetease(keyword, limit)
-        : await searchFromSayqz(keyword, limit, source);
-    return jsonResponse({ code: 200, data });
-  }
-
-  if (action === 'searchAll') {
-    const keyword = searchParams.get('keyword')?.trim() ?? '';
-    const sources = parseSources(searchParams.get('sources'));
-    const fallbackLimit = clampInt(searchParams.get('limit'), 10, 1, 50);
-    if (!keyword)
-      return jsonResponse({ code: 200, data: [], meta: { sources } });
-
-    const tasks = sources.map(async (src) => {
-      const lim = limitForSource(searchParams, src, fallbackLimit);
-      if (src === 'migu') return await searchFromMigu(keyword, lim);
-      if (src === 'netease') return await searchFromNetease(keyword, lim);
-      if (src === 'qq') return await searchFromSayqz(keyword, lim, 'qq');
-      return await searchFromSayqz(keyword, lim, 'kuwo');
-    });
-
-    const settled = await Promise.allSettled(tasks);
-    const merged: MusicTrack[] = [];
-    const seen = new Set<string>();
-    const bySource: Partial<Record<MusicSource, number>> = {};
-
-    for (let i = 0; i < settled.length; i++) {
-      const src = sources[i];
-      const res = settled[i];
-      if (res.status !== 'fulfilled') continue;
-      let count = 0;
-      for (const track of res.value) {
-        if (!track?.uid) continue;
-        if (seen.has(track.uid)) continue;
-        seen.add(track.uid);
-        merged.push(track);
-        count++;
-      }
-      bySource[src] = count;
-    }
-
-    return jsonResponse({
-      code: 200,
-      data: merged,
-      meta: { sources, bySource },
-    });
-  }
-
-  if (action === 'detail') {
-    if (
-      source !== 'migu' &&
-      source !== 'netease' &&
-      source !== 'qq' &&
-      source !== 'kuwo'
-    ) {
-      return jsonResponse({ error: 'Invalid source' }, { status: 400 });
-    }
-
-    if (source === 'migu') {
-      const keyword = searchParams.get('keyword')?.trim() ?? '';
-      const n = clampInt(searchParams.get('n'), 1, 1, 500);
-      if (!keyword)
-        return jsonResponse({ error: 'Missing keyword' }, { status: 400 });
-      const data = await getMiguDetail(keyword, n);
-      if (!data)
-        return jsonResponse({ error: '详情获取失败' }, { status: 502 });
-      return jsonResponse({ code: 200, data });
-    }
-
-    const id = searchParams.get('id');
-    if (!id) return jsonResponse({ error: 'Missing id' }, { status: 400 });
-
-    if (source === 'netease') {
-      const data = await getNeteaseDetail(id);
-      if (!data)
-        return jsonResponse({ error: '详情获取失败' }, { status: 502 });
-      return jsonResponse({ code: 200, data });
-    }
-
-    const data = await getSayqzDetail(source, id);
-    return jsonResponse({ code: 200, data });
-  }
-
-  return jsonResponse({ error: 'Invalid action' }, { status: 400 });
+export async function searchAllMusicTracks(
+  keyword: string,
+  limit: number
+): Promise<MusicTrack[]> {
+  const sources = parseSources(null);
+  const fallbackLimit = clampLimit(limit);
+  const { merged } = await searchAllTracks(
+    keyword,
+    sources,
+    new URLSearchParams(),
+    fallbackLimit
+  );
+  return merged;
 }
