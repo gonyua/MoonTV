@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import type { MusicSource } from './handler';
 import {
+  getFangpiDetail,
   getMiguDetail,
   getNeteaseDetail,
+  resolveFangpiStreamLocation,
   resolveSayqzStreamLocation,
   searchAllMusicTracks,
 } from './handler';
@@ -141,6 +143,7 @@ function parseRestSongId(
   if (!rawId) return null;
 
   if (
+    source !== 'fangpi' &&
     source !== 'migu' &&
     source !== 'netease' &&
     source !== 'qq' &&
@@ -150,6 +153,19 @@ function parseRestSongId(
   }
 
   return { source, rawId };
+}
+
+function parseRestSongIdWithFangpiFallback(
+  value: string
+): { source: MusicSource; rawId: string } | null {
+  const parsed = parseRestSongId(value);
+  if (parsed) return parsed;
+
+  if (/^\d+$/.test(value)) {
+    return { source: 'fangpi', rawId: value };
+  }
+
+  return null;
 }
 
 function parseMiguRawId(
@@ -172,7 +188,8 @@ function parseMiguRawId(
 async function searchSongsViaMusicApi(
   request: NextRequest,
   keyword: string,
-  limit: number
+  limit: number,
+  sourcesCsv: string | null
 ): Promise<
   Array<{
     id: string;
@@ -182,7 +199,7 @@ async function searchSongsViaMusicApi(
     coverArt: string;
   }>
 > {
-  const tracks = await searchAllMusicTracks(keyword, limit);
+  const tracks = await searchAllMusicTracks(keyword, limit, sourcesCsv);
   const defaultCoverArt = new URL('/logo.png', request.url).toString();
 
   const now = Date.now();
@@ -247,7 +264,7 @@ export async function GET(
     });
   }
 
-  if (action === 'getSong') {
+  if (action === 'getSong' || action === 'getsong') {
     const { searchParams } = new URL(request.url);
     const username = searchParams.get('u');
     const password = searchParams.get('p');
@@ -257,11 +274,27 @@ export async function GET(
     const id = searchParams.get('id');
     if (!id) return subsonicFailed('Missing id');
 
-    const parsed = parseRestSongId(id);
+    const parsed = parseRestSongIdWithFangpiFallback(id);
     if (!parsed) return subsonicFailed('Invalid id');
 
     const defaultCoverArt = new URL('/logo.png', request.url).toString();
     const cached = restSongCache.get(restSongCacheKey(id));
+
+    if (parsed.source === 'fangpi') {
+      const detail = await getFangpiDetail(parsed.rawId);
+      if (!detail && !cached) return subsonicFailed('Song not found');
+
+      return subsonicOk({
+        song: {
+          id,
+          isDir: false,
+          title: detail?.title || cached?.title || '',
+          artist: detail?.artist || cached?.artist || '',
+          album: detail?.album || cached?.album || '',
+          coverArt: detail?.cover || cached?.coverArt || defaultCoverArt,
+        },
+      });
+    }
 
     if (parsed.source === 'qq' || parsed.source === 'kuwo') {
       return subsonicOk({
@@ -319,6 +352,35 @@ export async function GET(
     });
   }
 
+  if (action === 'getlrc' || action === 'getLyrics') {
+    const { searchParams } = new URL(request.url);
+    const username = searchParams.get('u');
+    const password = searchParams.get('p');
+    const valid = await isValidViaLogin(request, username, password);
+    if (!valid) return subsonicFailed('Invalid username or password');
+
+    const id = searchParams.get('id');
+    if (!id) return subsonicFailed('Missing id');
+
+    const parsed = parseRestSongIdWithFangpiFallback(id);
+    if (!parsed) return subsonicFailed('Invalid id');
+
+    if (parsed.source !== 'fangpi') {
+      return subsonicFailed('Lyrics not supported');
+    }
+
+    const detail = await getFangpiDetail(parsed.rawId);
+    if (!detail) return subsonicFailed('Song not found');
+
+    return subsonicOk({
+      lyrics: {
+        title: detail.title,
+        artist: detail.artist,
+        value: detail.lrc || '',
+      },
+    });
+  }
+
   if (action === 'stream') {
     const { searchParams } = new URL(request.url);
     const username = searchParams.get('u');
@@ -329,10 +391,16 @@ export async function GET(
     const id = searchParams.get('id');
     if (!id) return subsonicFailed('Missing id');
 
-    const parsed = parseRestSongId(id);
+    const parsed = parseRestSongIdWithFangpiFallback(id);
     if (!parsed) return subsonicFailed('Invalid id');
 
     const cached = restSongCache.get(restSongCacheKey(id));
+
+    if (parsed.source === 'fangpi') {
+      const location = await resolveFangpiStreamLocation(parsed.rawId);
+      if (!location) return subsonicFailed('Stream url not found');
+      return NextResponse.redirect(location, 307);
+    }
 
     if (parsed.source === 'qq' || parsed.source === 'kuwo') {
       const location = await resolveSayqzStreamLocation(
@@ -390,7 +458,14 @@ export async function GET(
     const songOffset = Math.max(0, toInt(searchParams.get('songOffset'), 0));
 
     const fetchLimit = clampInt(songCount + songOffset, 1, 50);
-    const allSongs = await searchSongsViaMusicApi(request, keyword, fetchLimit);
+    const sourcesCsv =
+      searchParams.get('sources') ?? searchParams.get('source') ?? null;
+    const allSongs = await searchSongsViaMusicApi(
+      request,
+      keyword,
+      fetchLimit,
+      sourcesCsv
+    );
     // const songs = allSongs.slice(songOffset, songOffset + songCount);
 
     return subsonicOk({
