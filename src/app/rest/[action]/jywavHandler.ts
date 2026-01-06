@@ -1,12 +1,26 @@
 import { fetchHtml, fetchText, stripHtml } from './shared';
 import type { MusicTrack, MusicTrackDetail, RestSongInfo } from './types';
 
+const PLATFORM = 'jywav' as const;
+
 type CachedSong = {
   title: string;
   artist: string;
   album: string;
   coverArt: string;
 };
+
+function parseJywavId(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const [platform, source, ...rest] = trimmed.split('-');
+  if (platform !== PLATFORM) return null;
+  if (source !== PLATFORM) return null;
+
+  const rawId = rest.join('-').trim();
+  return rawId || null;
+}
 
 function parseJywavSearchText(text: string): { title: string; artist: string } {
   const cleaned = text.trim();
@@ -44,7 +58,7 @@ export async function search3(
     const { title, artist } = parseJywavSearchText(text);
 
     tracks.push({
-      uid: `jywav-${id}`,
+      uid: `${PLATFORM}-${PLATFORM}-${id}`,
       source: 'jywav',
       displayIndex: 0,
       keyword,
@@ -193,9 +207,12 @@ async function getJywavDetail(id: string): Promise<MusicTrackDetail | null> {
 }
 
 export async function getSong(
-  rawId: string,
+  id: string,
   cached?: CachedSong | null
 ): Promise<RestSongInfo | null> {
+  const rawId = parseJywavId(id);
+  if (!rawId) return null;
+
   const detail = await getJywavDetail(rawId);
   if (!detail && !cached) return null;
 
@@ -207,8 +224,11 @@ export async function getSong(
   };
 }
 
-export async function stream(rawId: string): Promise<string | null> {
-  const musicId = normalizeJywavId(rawId);
+export async function stream(id: string): Promise<string | null> {
+  const parsedId = parseJywavId(id);
+  if (!parsedId) return null;
+
+  const musicId = normalizeJywavId(parsedId);
   if (!/^\d+$/.test(musicId)) return null;
 
   const url = `https://jywav.com/audio/play?id=${encodeURIComponent(musicId)}`;
@@ -219,7 +239,9 @@ export async function stream(rawId: string): Promise<string | null> {
   return location;
 }
 
-export async function getLyricsBySongId(rawId: string): Promise<string | null> {
-  const detail = await getJywavDetail(rawId);
+export async function getLyricsBySongId(id: string): Promise<string | null> {
+  const parsedId = parseJywavId(id);
+  if (!parsedId) return null;
+  const detail = await getJywavDetail(parsedId);
   return detail?.lrc || null;
 }

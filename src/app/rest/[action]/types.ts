@@ -41,3 +41,25 @@ export type RestSongInfo = {
   album: string;
   coverArt: string | null;
 };
+
+export type RestPlaylistInfo = {
+  id: string;
+  name: string;
+  coverArt: string | null;
+  songCount: number;
+  duration: number;
+  created: string | null;
+  changed: string | null;
+};
+
+export type RestPlaylistEntry = {
+  id: string;
+  isDir: false;
+  title: string;
+  artist: string;
+  coverArt: string | null;
+};
+
+export type RestPlaylistDetail = RestPlaylistInfo & {
+  entry: RestPlaylistEntry[];
+};

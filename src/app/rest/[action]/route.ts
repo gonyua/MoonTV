@@ -1,15 +1,55 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+import * as cggHandler from './cggHandler';
 import * as fangpiHandler from './fangpiHandler';
 import * as jywavHandler from './jywavHandler';
-import * as kuwoHandler from './kuwoHandler';
-import * as miguHandler from './miguHandler';
-import * as neteaseHandler from './neteaseHandler';
-import * as qqHandler from './qqHandler';
+import * as sayqzHandler from './sayqzHandler';
 import { clampLimit } from './shared';
-import type { MusicSource, MusicTrack } from './types';
+import type { MusicTrack } from './types';
 
 export const runtime = 'edge';
+
+const REST_CACHE_TTL_SECONDS = 60 * 60 * 24; // 1 day
+
+function setRestCacheHeaders(headers: Headers, ttlSeconds: number) {
+  const ttl = Math.max(0, Math.trunc(ttlSeconds));
+  headers.set('Cache-Control', `public, max-age=${ttl}, s-maxage=${ttl}`);
+  headers.set('CDN-Cache-Control', `public, s-maxage=${ttl}`);
+  headers.set('Vercel-CDN-Cache-Control', `public, s-maxage=${ttl}`);
+}
+
+async function withRestCache(
+  request: NextRequest,
+  makeResponse: () => Promise<Response>,
+  ttlSeconds = REST_CACHE_TTL_SECONDS
+): Promise<Response> {
+  const cacheStorage = (
+    globalThis as unknown as { caches?: CacheStorage | undefined }
+  ).caches;
+  const cache = (cacheStorage as unknown as { default?: Cache | undefined })
+    ?.default;
+  if (!cache) {
+    const response = await makeResponse();
+    if (response.status === 200 || response.status === 307) {
+      setRestCacheHeaders(response.headers, ttlSeconds);
+    }
+    return response;
+  }
+
+  const cacheRequest = new Request(request.url, { method: 'GET' });
+
+  const cached = await cache.match(cacheRequest);
+  if (cached) return cached;
+
+  const response = await makeResponse();
+  if (response.status === 200 || response.status === 307) {
+    setRestCacheHeaders(response.headers, ttlSeconds);
+    // Best-effort: don't fail the request if the cache write fails.
+    cache.put(cacheRequest, response.clone()).catch(() => null);
+  }
+
+  return response;
+}
 
 type SubsonicFailedResponse = {
   'subsonic-response': {
@@ -184,58 +224,40 @@ function clampInt(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-function parseSources(value: string | null): MusicSource[] {
-  const all: MusicSource[] = [
-    'fangpi',
-    'jywav',
-    'migu',
-    'netease',
-    'qq',
-    'kuwo',
-  ];
-  if (!value) return all;
-  const wanted = value
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-  const set = new Set<MusicSource>();
-  for (const s of wanted) {
-    if (
-      s === 'fangpi' ||
-      s === 'jywav' ||
-      s === 'migu' ||
-      s === 'netease' ||
-      s === 'qq' ||
-      s === 'kuwo'
-    )
-      set.add(s);
-  }
-  const out = all.filter((s) => set.has(s));
-  return out.length ? out : all;
+type MusicPlatform = 'fangpi' | 'jywav' | 'cgg' | 'sayqz';
+
+function parseRestPlatformId(
+  value: string
+): { platform: MusicPlatform; id: string } | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const parts = trimmed.split('-').filter(Boolean);
+  if (parts.length < 3) return null;
+
+  if (
+    parts[0] !== 'fangpi' &&
+    parts[0] !== 'jywav' &&
+    parts[0] !== 'cgg' &&
+    parts[0] !== 'sayqz'
+  )
+    return null;
+
+  return { platform: parts[0], id: trimmed };
 }
 
 async function searchAllMusicTracksViaHandlers(
   keyword: string,
-  limit: number,
-  sourcesCsv: string | null
+  limit: number
 ): Promise<MusicTrack[]> {
-  const sources = parseSources(sourcesCsv);
-  const perSourceLimit = clampLimit(limit);
+  const perPlatformLimit = clampLimit(limit);
 
-  const tasks = sources.map(async (src) => {
-    if (src === 'fangpi')
-      return await fangpiHandler.search3(keyword, perSourceLimit);
-    if (src === 'jywav')
-      return await jywavHandler.search3(keyword, perSourceLimit);
-    if (src === 'migu')
-      return await miguHandler.search3(keyword, perSourceLimit);
-    if (src === 'netease')
-      return await neteaseHandler.search3(keyword, perSourceLimit);
-    if (src === 'qq') return await qqHandler.search3(keyword, perSourceLimit);
-    if (src === 'kuwo')
-      return await kuwoHandler.search3(keyword, perSourceLimit);
-    return [];
-  });
+  const tasks = [
+    fangpiHandler.search3(keyword, perPlatformLimit),
+    jywavHandler.search3(keyword, perPlatformLimit),
+    cggHandler.search3(keyword, perPlatformLimit),
+    sayqzHandler.search3(keyword, perPlatformLimit),
+  ] as const;
 
   const settled = await Promise.allSettled(tasks);
   const merged: MusicTrack[] = [];
@@ -248,48 +270,10 @@ async function searchAllMusicTracksViaHandlers(
   return merged;
 }
 
-function parseRestSongId(
-  value: string
-): { source: MusicSource; rawId: string } | null {
-  const idx = value.indexOf('-');
-  if (idx <= 0) return null;
-
-  const source = value.slice(0, idx);
-  const rawId = value.slice(idx + 1);
-  if (!rawId) return null;
-
-  if (
-    source !== 'fangpi' &&
-    source !== 'jywav' &&
-    source !== 'migu' &&
-    source !== 'netease' &&
-    source !== 'qq' &&
-    source !== 'kuwo'
-  ) {
-    return null;
-  }
-
-  return { source, rawId };
-}
-
-function parseRestSongIdWithFangpiFallback(
-  value: string
-): { source: MusicSource; rawId: string } | null {
-  const parsed = parseRestSongId(value);
-  if (parsed) return parsed;
-
-  if (/^\d+$/.test(value)) {
-    return { source: 'fangpi', rawId: value };
-  }
-
-  return null;
-}
-
 async function searchSongsViaMusicApi(
   request: NextRequest,
   keyword: string,
-  limit: number,
-  sourcesCsv: string | null
+  limit: number
 ): Promise<
   Array<{
     id: string;
@@ -299,11 +283,7 @@ async function searchSongsViaMusicApi(
     coverArt: string;
   }>
 > {
-  const tracks = await searchAllMusicTracksViaHandlers(
-    keyword,
-    limit,
-    sourcesCsv
-  );
+  const tracks = await searchAllMusicTracksViaHandlers(keyword, limit);
   const defaultCoverArt = new URL(
     '/logo.png',
     getPublicOrigin(request)
@@ -331,10 +311,12 @@ export async function GET(
 
   // getOpenSubsonicExtensions
   if (action === 'getOpenSubsonicExtensions') {
-    return subsonicOk({
-      serverVersion: '0.0.0',
-      openSubsonicExtensions: [],
-    });
+    return await withRestCache(request, async () =>
+      subsonicOk({
+        serverVersion: '0.0.0',
+        openSubsonicExtensions: [],
+      })
+    );
   }
 
   // ping
@@ -348,11 +330,13 @@ export async function GET(
       return subsonicFailed('Invalid username or password');
     }
 
-    return subsonicOk({
-      version: '1.16.1',
-      type: 'AginMusicAdapter',
-      serverVersion: '0.0.0',
-    });
+    return await withRestCache(request, async () =>
+      subsonicOk({
+        version: '1.16.1',
+        type: 'AginMusicAdapter',
+        serverVersion: '0.0.0',
+      })
+    );
   }
 
   // search3
@@ -368,36 +352,39 @@ export async function GET(
     }
 
     const keyword = (searchParams.get('query') ?? '').trim();
-    if (!keyword || keyword.length <= 1) {
+    return await withRestCache(request, async () => {
+      if (!keyword || keyword.length <= 1) {
+        return subsonicOk({
+          searchResult3: {
+            album: [],
+            artist: [],
+            song: [],
+          },
+        });
+      }
+
+      const songOffset = Math.max(0, toInt(searchParams.get('songOffset'), 0));
+      const songCount = clampInt(
+        toInt(searchParams.get('songCount'), 20),
+        0,
+        50
+      );
+
+      const fetchLimit = clampInt(songCount + songOffset, 1, 50);
+      const allSongs = await searchSongsViaMusicApi(
+        request,
+        keyword,
+        fetchLimit
+      );
+      // const songs = allSongs.slice(songOffset, songOffset + songCount);
+
       return subsonicOk({
         searchResult3: {
           album: [],
           artist: [],
-          song: [],
+          song: allSongs,
         },
       });
-    }
-
-    const songOffset = Math.max(0, toInt(searchParams.get('songOffset'), 0));
-    const songCount = clampInt(toInt(searchParams.get('songCount'), 20), 0, 50);
-
-    const fetchLimit = clampInt(songCount + songOffset, 1, 50);
-    const sourcesCsv =
-      searchParams.get('sources') ?? searchParams.get('source') ?? null;
-    const allSongs = await searchSongsViaMusicApi(
-      request,
-      keyword,
-      fetchLimit,
-      sourcesCsv
-    );
-    // const songs = allSongs.slice(songOffset, songOffset + songCount);
-
-    return subsonicOk({
-      searchResult3: {
-        album: [],
-        artist: [],
-        song: allSongs,
-      },
     });
   }
 
@@ -412,16 +399,64 @@ export async function GET(
     const id = searchParams.get('id');
     if (!id) return subsonicFailed('Missing id');
 
-    const parsed = parseRestSongIdWithFangpiFallback(id);
+    const parsed = parseRestPlatformId(id);
     if (!parsed) return subsonicFailed('Invalid id');
 
-    const defaultCoverArt = new URL(
-      '/logo.png',
-      getPublicOrigin(request)
-    ).toString();
+    return await withRestCache(request, async () => {
+      const defaultCoverArt = new URL(
+        '/logo.png',
+        getPublicOrigin(request)
+      ).toString();
 
-    if (parsed.source === 'fangpi') {
-      const song = await fangpiHandler.getSong(parsed.rawId);
+      if (parsed.platform === 'fangpi') {
+        const song = await fangpiHandler.getSong(id);
+        if (!song) return subsonicFailed('Song not found');
+
+        return subsonicOk({
+          song: {
+            id,
+            isDir: false,
+            title: song.title,
+            artist: song.artist,
+            album: song.album,
+            coverArt: song.coverArt || defaultCoverArt,
+          },
+        });
+      }
+
+      if (parsed.platform === 'jywav') {
+        const song = await jywavHandler.getSong(id);
+        if (!song) return subsonicFailed('Song not found');
+
+        return subsonicOk({
+          song: {
+            id,
+            isDir: false,
+            title: song.title,
+            artist: song.artist,
+            album: song.album,
+            coverArt: song.coverArt || defaultCoverArt,
+          },
+        });
+      }
+
+      if (parsed.platform === 'sayqz') {
+        const song = await sayqzHandler.getSong(id);
+        if (!song) return subsonicFailed('Song not found');
+        return subsonicOk({
+          song: {
+            id,
+            isDir: false,
+            title: song.title,
+            artist: song.artist,
+            album: song.album,
+            coverArt: song.coverArt || defaultCoverArt,
+          },
+        });
+      }
+
+      const keywordFallback = (searchParams.get('query') ?? '').trim();
+      const song = await cggHandler.getSong(id, null, keywordFallback);
       if (!song) return subsonicFailed('Song not found');
 
       return subsonicOk({
@@ -434,71 +469,6 @@ export async function GET(
           coverArt: song.coverArt || defaultCoverArt,
         },
       });
-    }
-
-    if (parsed.source === 'jywav') {
-      const song = await jywavHandler.getSong(parsed.rawId);
-      if (!song) return subsonicFailed('Song not found');
-
-      return subsonicOk({
-        song: {
-          id,
-          isDir: false,
-          title: song.title,
-          artist: song.artist,
-          album: song.album,
-          coverArt: song.coverArt || defaultCoverArt,
-        },
-      });
-    }
-
-    if (parsed.source === 'qq' || parsed.source === 'kuwo') {
-      const song =
-        parsed.source === 'qq'
-          ? await qqHandler.getSong(parsed.rawId)
-          : await kuwoHandler.getSong(parsed.rawId);
-
-      return subsonicOk({
-        song: {
-          id,
-          isDir: false,
-          title: song.title,
-          artist: song.artist,
-          album: song.album,
-          coverArt: song.coverArt || defaultCoverArt,
-        },
-      });
-    }
-
-    if (parsed.source === 'netease') {
-      const song = await neteaseHandler.getSong(parsed.rawId);
-      if (!song) return subsonicFailed('Song not found');
-
-      return subsonicOk({
-        song: {
-          id,
-          isDir: false,
-          title: song.title,
-          artist: song.artist,
-          album: song.album,
-          coverArt: song.coverArt || defaultCoverArt,
-        },
-      });
-    }
-
-    const keywordFallback = (searchParams.get('query') ?? '').trim();
-    const song = await miguHandler.getSong(parsed.rawId, null, keywordFallback);
-    if (!song) return subsonicFailed('Song not found');
-
-    return subsonicOk({
-      song: {
-        id,
-        isDir: false,
-        title: song.title,
-        artist: song.artist,
-        album: song.album,
-        coverArt: song.coverArt || defaultCoverArt,
-      },
     });
   }
 
@@ -513,40 +483,33 @@ export async function GET(
     const id = searchParams.get('id');
     if (!id) return subsonicFailed('Missing id');
 
-    const parsed = parseRestSongIdWithFangpiFallback(id);
+    const parsed = parseRestPlatformId(id);
     if (!parsed) return subsonicFailed('Invalid id');
 
-    if (parsed.source === 'fangpi') {
-      const location = await fangpiHandler.stream(parsed.rawId);
-      if (!location) return subsonicFailed('Stream url not found');
-      return NextResponse.redirect(location, 307);
-    }
+    return await withRestCache(request, async () => {
+      if (parsed.platform === 'fangpi') {
+        const location = await fangpiHandler.stream(id);
+        if (!location) return subsonicFailed('Stream url not found');
+        return NextResponse.redirect(location, 307);
+      }
 
-    if (parsed.source === 'jywav') {
-      const location = await jywavHandler.stream(parsed.rawId);
-      if (!location) return subsonicFailed('Stream url not found');
-      return NextResponse.redirect(location, 307);
-    }
+      if (parsed.platform === 'jywav') {
+        const location = await jywavHandler.stream(id);
+        if (!location) return subsonicFailed('Stream url not found');
+        return NextResponse.redirect(location, 307);
+      }
 
-    if (parsed.source === 'qq' || parsed.source === 'kuwo') {
-      const location =
-        parsed.source === 'qq'
-          ? await qqHandler.stream(parsed.rawId)
-          : await kuwoHandler.stream(parsed.rawId);
-      if (!location) return subsonicFailed('Stream url not found');
-      return NextResponse.redirect(location, 307);
-    }
+      if (parsed.platform === 'sayqz') {
+        const location = await sayqzHandler.stream(id);
+        if (!location) return subsonicFailed('Stream url not found');
+        return NextResponse.redirect(location, 307);
+      }
 
-    if (parsed.source === 'netease') {
-      const url = await neteaseHandler.stream(parsed.rawId);
+      const keywordFallback = (searchParams.get('query') ?? '').trim();
+      const url = await cggHandler.stream(id, null, keywordFallback);
       if (!url) return subsonicFailed('Stream url not found');
       return NextResponse.redirect(url, 307);
-    }
-
-    const keywordFallback = (searchParams.get('query') ?? '').trim();
-    const url = await miguHandler.stream(parsed.rawId, null, keywordFallback);
-    if (!url) return subsonicFailed('Stream url not found');
-    return NextResponse.redirect(url, 307);
+    });
   }
 
   // getLyricsBySongId
@@ -560,38 +523,111 @@ export async function GET(
     const id = searchParams.get('id');
     if (!id) return subsonicFailed('Missing id');
 
-    const parsed = parseRestSongIdWithFangpiFallback(id);
+    const parsed = parseRestPlatformId(id);
     if (!parsed) return subsonicFailed('Invalid id');
 
-    let lrc: string | null = null;
-    if (parsed.source === 'fangpi') {
-      lrc = await fangpiHandler.getLyricsBySongId(parsed.rawId);
-    } else if (parsed.source === 'jywav') {
-      lrc = await jywavHandler.getLyricsBySongId(parsed.rawId);
-    } else if (parsed.source === 'netease') {
-      lrc = await neteaseHandler.getLyricsBySongId(parsed.rawId);
-    } else if (parsed.source === 'migu') {
-      const keywordFallback = (searchParams.get('query') ?? '').trim();
-      lrc = await miguHandler.getLyricsBySongId(
-        parsed.rawId,
-        null,
-        keywordFallback
-      );
-    } else if (parsed.source === 'qq') {
-      lrc = await qqHandler.getLyricsBySongId(parsed.rawId);
-    } else if (parsed.source === 'kuwo') {
-      lrc = await kuwoHandler.getLyricsBySongId(parsed.rawId);
-    }
+    return await withRestCache(request, async () => {
+      let lrc: string | null = null;
+      if (parsed.platform === 'fangpi') {
+        lrc = await fangpiHandler.getLyricsBySongId(id);
+      } else if (parsed.platform === 'jywav') {
+        lrc = await jywavHandler.getLyricsBySongId(id);
+      } else if (parsed.platform === 'sayqz') {
+        lrc = await sayqzHandler.getLyricsBySongId(id);
+      } else {
+        const keywordFallback = (searchParams.get('query') ?? '').trim();
+        lrc = await cggHandler.getLyricsBySongId(id, null, keywordFallback);
+      }
 
-    const structured = lrc ? lrcToStructuredLyrics(lrc) : null;
-    if (!structured || structured.line.length === 0) return subsonicOk({});
+      const structured = lrc ? lrcToStructuredLyrics(lrc) : null;
+      if (!structured || structured.line.length === 0) return subsonicOk({});
 
-    const structuredLyrics: StructuredLyrics[] = [
-      { lang: 'zh', synced: structured.synced, line: structured.line },
-    ];
+      const structuredLyrics: StructuredLyrics[] = [
+        { lang: 'zh', synced: structured.synced, line: structured.line },
+      ];
 
-    return subsonicOk({
-      lyricsList: { structuredLyrics },
+      return subsonicOk({
+        lyricsList: { structuredLyrics },
+      });
+    });
+  }
+
+  // getPlaylists
+  if (action === 'getPlaylists') {
+    const { searchParams } = new URL(request.url);
+    const username = searchParams.get('u');
+    const password = searchParams.get('p');
+    const valid = await isValidViaLogin(request, username, password);
+    if (!valid) return subsonicFailed('Invalid username or password');
+
+    return await withRestCache(request, async () => {
+      const defaultCoverArt = new URL(
+        '/logo.png',
+        getPublicOrigin(request)
+      ).toString();
+
+      const playlist = await sayqzHandler.getPlaylists();
+
+      const fallbackIso = new Date().toISOString();
+      const normalized = playlist.map((it) => ({
+        id: it.id,
+        name: it.name,
+        coverArt: it.coverArt || defaultCoverArt,
+        songCount: it.songCount,
+        duration: it.duration,
+        created: it.created || fallbackIso,
+        changed: it.changed || fallbackIso,
+      }));
+
+      return subsonicOk({
+        playlists: { playlist: normalized },
+      });
+    });
+  }
+
+  // getPlaylist
+  if (action === 'getPlaylist') {
+    const { searchParams } = new URL(request.url);
+    const username = searchParams.get('u');
+    const password = searchParams.get('p');
+    const valid = await isValidViaLogin(request, username, password);
+    if (!valid) return subsonicFailed('Invalid username or password');
+
+    const id = (searchParams.get('id') ?? '').trim();
+    if (!id) return subsonicFailed('Missing id');
+
+    const parsed = parseRestPlatformId(id);
+    if (!parsed || parsed.platform !== 'sayqz')
+      return subsonicFailed('Invalid playlist id');
+
+    return await withRestCache(request, async () => {
+      const detail = await sayqzHandler.getPlaylist(id);
+      if (!detail) return subsonicFailed('Playlist not found');
+
+      const fallbackIso = new Date().toISOString();
+      const defaultCoverArt = new URL(
+        '/logo.png',
+        getPublicOrigin(request)
+      ).toString();
+
+      const coverArt = detail.coverArt || defaultCoverArt;
+      const created = detail.created || fallbackIso;
+      const changed = detail.changed || fallbackIso;
+      const entry = detail.entry.map((it) => ({
+        ...it,
+        coverArt: it.coverArt || coverArt,
+      }));
+
+      return subsonicOk({
+        playlist: {
+          ...detail,
+          coverArt,
+          songCount: Math.max(detail.songCount, entry.length),
+          created,
+          changed,
+          entry,
+        },
+      });
     });
   }
 

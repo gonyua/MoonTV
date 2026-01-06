@@ -1,12 +1,26 @@
 import { decodeHtmlEntities, stripHtml } from './shared';
 import type { MusicTrack, MusicTrackDetail, RestSongInfo } from './types';
 
+const PLATFORM = 'fangpi' as const;
+
 type CachedSong = {
   title: string;
   artist: string;
   album: string;
   coverArt: string;
 };
+
+function parseFangpiId(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const [platform, source, ...rest] = trimmed.split('-');
+  if (platform !== PLATFORM) return null;
+  if (source !== PLATFORM) return null;
+
+  const rawId = rest.join('-').trim();
+  return rawId || null;
+}
 
 function getSetCookieValues(headers: Headers): string[] {
   const asAny = headers as unknown as {
@@ -148,7 +162,7 @@ export async function search3(
       ) || '';
 
     tracks.push({
-      uid: `fangpi-${mp3Id}`,
+      uid: `${PLATFORM}-${PLATFORM}-${mp3Id}`,
       source: 'fangpi',
       displayIndex: 0,
       keyword,
@@ -189,9 +203,12 @@ async function getFangpiDetail(id: string): Promise<MusicTrackDetail | null> {
 }
 
 export async function getSong(
-  rawId: string,
+  id: string,
   cached?: CachedSong | null
 ): Promise<RestSongInfo | null> {
+  const rawId = parseFangpiId(id);
+  if (!rawId) return null;
+
   const detail = await getFangpiDetail(rawId);
   if (!detail && !cached) return null;
 
@@ -203,9 +220,12 @@ export async function getSong(
   };
 }
 
-export async function stream(rawId: string): Promise<string | null> {
+export async function stream(id: string): Promise<string | null> {
+  const parsedId = parseFangpiId(id);
+  if (!parsedId) return null;
+
   const page = await fetchFangpiHtml(
-    `/music/${encodeURIComponent(rawId)}`,
+    `/music/${encodeURIComponent(parsedId)}`,
     12000
   );
   if (!page?.html) return null;
@@ -230,7 +250,7 @@ export async function stream(rawId: string): Promise<string | null> {
         'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
         Origin: 'https://www.fangpi.net',
-        Referer: `https://www.fangpi.net/music/${encodeURIComponent(rawId)}`,
+        Referer: `https://www.fangpi.net/music/${encodeURIComponent(parsedId)}`,
         Cookie: sessionCookie,
         Accept: 'application/json, text/javascript, */*; q=0.01',
       },
@@ -251,7 +271,9 @@ export async function stream(rawId: string): Promise<string | null> {
   }
 }
 
-export async function getLyricsBySongId(rawId: string): Promise<string | null> {
-  const detail = await getFangpiDetail(rawId);
+export async function getLyricsBySongId(id: string): Promise<string | null> {
+  const parsedId = parseFangpiId(id);
+  if (!parsedId) return null;
+  const detail = await getFangpiDetail(parsedId);
   return detail?.lrc || null;
 }

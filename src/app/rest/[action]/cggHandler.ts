@@ -1,6 +1,31 @@
 import { fetchJson, fetchText } from './shared';
 import type { MusicTrack, MusicTrackDetail, RestSongInfo } from './types';
 
+const PLATFORM = 'cgg' as const;
+
+type CggSource = 'migu' | 'netease';
+const DEFAULT_SOURCES: CggSource[] = ['netease', 'migu'];
+
+function isCggSource(value: string): value is CggSource {
+  return value === 'migu' || value === 'netease';
+}
+
+function parseCggId(
+  value: string
+): { source: CggSource; rawId: string } | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const [platform, source, ...rest] = trimmed.split('-');
+  if (platform !== PLATFORM) return null;
+  if (!source || !isCggSource(source)) return null;
+
+  const rawId = rest.join('-').trim();
+  if (!rawId) return null;
+
+  return { source, rawId };
+}
+
 type CachedSong = {
   title: string;
   artist: string;
@@ -41,7 +66,7 @@ function parseMiguRawId(
   return { n: Math.trunc(n), keyword: keyword || null };
 }
 
-export async function search3(
+async function searchMigu(
   keyword: string,
   limit: number
 ): Promise<MusicTrack[]> {
@@ -59,7 +84,7 @@ export async function search3(
     const n = Number(it?.n) || 0;
     const title = String(it?.title ?? '');
     const artist = String(it?.singer ?? '');
-    const uid = `migu-${n}-${keyword}`;
+    const uid = `${PLATFORM}-migu-${n}-${keyword}`;
     const track: MusicTrack = {
       uid,
       source: 'migu',
@@ -116,12 +141,125 @@ async function getMiguDetail(
   };
 }
 
+async function searchNetease(
+  keyword: string,
+  limit: number
+): Promise<MusicTrack[]> {
+  const url = `https://api-v1.cenguigui.cn/api/music/netease/WyY_Dg.php?type=json&msg=${encodeURIComponent(
+    keyword
+  )}&num=${encodeURIComponent(limit)}&n=`;
+  const json = await fetchJson(url, 8000);
+
+  type NeteaseSearchItem = {
+    n?: number;
+    title?: string;
+    singer?: string;
+    songid?: number;
+  };
+  const code = (json as { code?: unknown } | null)?.code;
+  const data = (json as { data?: unknown } | null)?.data;
+  if (code !== 200 || !Array.isArray(data)) return [];
+
+  return (data as NeteaseSearchItem[]).slice(0, limit).flatMap((it) => {
+    const songid = it?.songid;
+    if (songid === undefined || songid === null) return [];
+
+    const uid = `${PLATFORM}-netease-${songid}`;
+    const track: MusicTrack = {
+      uid,
+      source: 'netease',
+      displayIndex: Number(it?.n) || 0,
+      keyword,
+      songid,
+      title: String(it?.title ?? ''),
+      artist: String(it?.singer ?? ''),
+      album: '',
+      cover: null,
+      audioUrl: null,
+      lrc: null,
+      lrcUrl: null,
+      detailsLoaded: false,
+      quality: 'lossless',
+    };
+    return [track];
+  });
+}
+
+async function getNeteaseDetail(id: string): Promise<MusicTrackDetail | null> {
+  const url = `https://api.cenguigui.cn/api/netease/music_v1.php?id=${encodeURIComponent(
+    id
+  )}&type=json&level=lossless`;
+  const json = await fetchJson(url, 12000);
+  type NeteaseDetailData = {
+    name?: string;
+    artist?: string;
+    album?: string;
+    pic?: string;
+    url?: string;
+    lyric?: string;
+    format?: string;
+  };
+  const code = (json as { code?: unknown } | null)?.code;
+  const data = (json as { data?: unknown } | null)?.data as
+    | NeteaseDetailData
+    | undefined;
+  if (code !== 200 || !data) return null;
+
+  const format = String(data.format ?? '');
+  return {
+    title: String(data.name ?? ''),
+    artist: String(data.artist ?? ''),
+    album: String(data.album ?? ''),
+    cover: data.pic ? String(data.pic) : null,
+    audioUrl: data.url ? String(data.url) : null,
+    lrcUrl: null,
+    lrc: data.lyric ? String(data.lyric) : null,
+    detailsLoaded: true,
+    quality: format.includes('无损') ? 'lossless' : 'normal',
+  };
+}
+
+export async function search3(
+  keyword: string,
+  limit: number
+): Promise<MusicTrack[]> {
+  const tasks = DEFAULT_SOURCES.map((source) =>
+    source === 'migu'
+      ? searchMigu(keyword, limit)
+      : searchNetease(keyword, limit)
+  );
+  const settled = await Promise.allSettled(tasks);
+
+  const merged: MusicTrack[] = [];
+  for (const res of settled) {
+    if (res.status !== 'fulfilled') continue;
+    merged.push(...res.value);
+  }
+
+  return merged;
+}
+
 export async function getSong(
-  rawId: string,
+  id: string,
   cached?: CachedSong | null,
   keywordFallback?: string | null
 ): Promise<RestSongInfo | null> {
-  const parsed = parseMiguRawId(rawId);
+  const parsedId = parseCggId(id);
+  if (!parsedId) return null;
+
+  if (parsedId.source === 'netease') {
+    const detail = await getNeteaseDetail(parsedId.rawId);
+    if (!detail && !cached) return null;
+
+    return {
+      title: detail?.title || cached?.title || '',
+      artist: detail?.artist || cached?.artist || '',
+      album: detail?.album || cached?.album || '',
+      coverArt: detail?.cover || cached?.coverArt || null,
+    };
+  }
+
+  const parsed = parseMiguRawId(parsedId.rawId);
   if (!parsed) return null;
 
   const keyword = cached?.keyword || parsed.keyword || keywordFallback?.trim();
@@ -139,11 +277,19 @@ export async function getSong(
 }
 
 export async function stream(
-  rawId: string,
+  id: string,
   cached?: CachedSong | null,
   keywordFallback?: string | null
 ): Promise<string | null> {
-  const parsed = parseMiguRawId(rawId);
+  const parsedId = parseCggId(id);
+  if (!parsedId) return null;
+
+  if (parsedId.source === 'netease') {
+    const detail = await getNeteaseDetail(parsedId.rawId);
+    return detail?.audioUrl || null;
+  }
+
+  const parsed = parseMiguRawId(parsedId.rawId);
   if (!parsed) return null;
 
   const keyword = cached?.keyword || parsed.keyword || keywordFallback?.trim();
@@ -154,11 +300,19 @@ export async function stream(
 }
 
 export async function getLyricsBySongId(
-  rawId: string,
+  id: string,
   cached?: CachedSong | null,
   keywordFallback?: string | null
 ): Promise<string | null> {
-  const parsed = parseMiguRawId(rawId);
+  const parsedId = parseCggId(id);
+  if (!parsedId) return null;
+
+  if (parsedId.source === 'netease') {
+    const detail = await getNeteaseDetail(parsedId.rawId);
+    return detail?.lrc || null;
+  }
+
+  const parsed = parseMiguRawId(parsedId.rawId);
   if (!parsed) return null;
 
   const keyword = cached?.keyword || parsed.keyword || keywordFallback?.trim();
