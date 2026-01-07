@@ -661,6 +661,16 @@ export async function GET(
       const playlist = await sayqzHandler.getPlaylists();
 
       const fallbackIso = new Date().toISOString();
+      const likeId = 'xx-like';
+      const likePlaylist = {
+        id: likeId,
+        name: '我的喜欢',
+        coverArt: defaultCoverArt,
+        songCount: 1000,
+        duration: 10000,
+        created: '2026-01-01T00:00:00.000Z',
+        changed: '2026-01-02T00:00:00.000Z',
+      };
       const normalized = playlist.map((it) => ({
         id: it.id,
         name: it.name,
@@ -672,7 +682,7 @@ export async function GET(
       }));
 
       return subsonicOk({
-        playlists: { playlist: normalized },
+        playlists: { playlist: [likePlaylist, ...normalized] },
       });
     });
   }
@@ -690,7 +700,7 @@ export async function GET(
     if (!id) return subsonicFailed('Missing id');
 
     // 自定义：xx-like（喜欢列表）
-    if (id.endsWith('xx-like')) {
+    if (id === 'xx-like') {
       try {
         const likes = await listMusicLikesFromD1({ username });
 

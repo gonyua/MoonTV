@@ -16,12 +16,15 @@ type D1Database = {
   batch?: (statements: D1PreparedStatement[]) => Promise<D1Result[]>;
 };
 
-function getD1Database(): D1Database {
+function tryGetD1Database(): D1Database | null {
   const db = (process.env as unknown as { DB?: unknown }).DB;
-  if (!db) {
-    throw new Error('D1 DB binding not found: process.env.DB');
-  }
-  return db as D1Database;
+  return db ? (db as D1Database) : null;
+}
+
+function getD1Database(): D1Database {
+  const db = tryGetD1Database();
+  if (!db) throw new Error('D1 DB binding not found: process.env.DB');
+  return db;
 }
 
 const NETEASE_REFERER = 'https://music.163.com/';
@@ -236,6 +239,16 @@ export type ImportNeteaseLikesResult = {
   total: number;
   imported: number;
   skipped: number;
+  stored: boolean;
+  tracks: Array<{
+    key: string;
+    source: string;
+    songId: string;
+    title: string;
+    artist: string;
+    album: string;
+    cover: string | null;
+  }>;
 };
 
 export type MusicLikeBasic = {
@@ -323,7 +336,7 @@ export async function importNeteaseLikesToD1(options: {
       : Infinity;
   const targetIds = playlist.trackIds.slice(0, max);
 
-  const db = getD1Database();
+  const db = tryGetD1Database();
   const saveTime = Date.now();
   const extraBase = {
     playlistId: playlist.id,
@@ -341,6 +354,7 @@ export async function importNeteaseLikesToD1(options: {
 
   let imported = 0;
   let skipped = 0;
+  const tracks: ImportNeteaseLikesResult['tracks'] = [];
 
   const idChunks = chunk(targetIds, 100);
   for (const ids of idChunks) {
@@ -357,6 +371,17 @@ export async function importNeteaseLikesToD1(options: {
 
       const { name: album, cover } = getAlbum(song);
       const key = createNeteaseLikeKey({ title, artist });
+      tracks.push({
+        key,
+        source: 'netease',
+        songId: String(song.id),
+        title,
+        artist,
+        album: album || '',
+        cover: cover ?? null,
+      });
+
+      if (!db) continue;
       const extra = JSON.stringify({
         ...extraBase,
         songId: String(song.id),
@@ -385,19 +410,21 @@ export async function importNeteaseLikesToD1(options: {
 
     if (statements.length === 0) continue;
 
-    if (typeof db.batch === 'function') {
-      const results = await db.batch(statements);
-      for (const res of results) {
-        const changes = res?.meta?.changes ?? 0;
-        if (changes > 0) imported += 1;
-        else skipped += 1;
-      }
-    } else {
-      for (const stmt of statements) {
-        const res = await stmt.run();
-        const changes = res?.meta?.changes ?? 0;
-        if (changes > 0) imported += 1;
-        else skipped += 1;
+    if (db) {
+      if (typeof db.batch === 'function') {
+        const results = await db.batch(statements);
+        for (const res of results) {
+          const changes = res?.meta?.changes ?? 0;
+          if (changes > 0) imported += 1;
+          else skipped += 1;
+        }
+      } else {
+        for (const stmt of statements) {
+          const res = await stmt.run();
+          const changes = res?.meta?.changes ?? 0;
+          if (changes > 0) imported += 1;
+          else skipped += 1;
+        }
       }
     }
   }
@@ -408,5 +435,7 @@ export async function importNeteaseLikesToD1(options: {
     total: targetIds.length,
     imported,
     skipped,
+    stored: Boolean(db),
+    tracks,
   };
 }
