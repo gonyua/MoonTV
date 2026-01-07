@@ -50,6 +50,14 @@ export async function search3(
   return merged;
 }
 
+export async function search3BySource(
+  keyword: string,
+  limit: number,
+  source: SayqzHandlerSource
+): Promise<MusicTrack[]> {
+  return searchSayqz(keyword, limit, source);
+}
+
 export async function getSong(id: string): Promise<RestSongInfo | null> {
   const parsed = parseSayqzId(id);
   if (!parsed) return null;

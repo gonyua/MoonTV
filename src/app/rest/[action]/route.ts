@@ -246,28 +246,115 @@ function parseRestPlatformId(
   return { platform: parts[0], id: trimmed };
 }
 
+type SearchProvider = {
+  id: MusicPlatform;
+  search3: (keyword: string, limit: number) => Promise<MusicTrack[]>;
+};
+
+const SAYQZ_SEARCH_SOURCES: sayqzHandler.SayqzHandlerSource[] = [
+  'netease',
+  'kuwo',
+  'qq',
+];
+let sayqzSourceCursor = 0;
+function pickSayqzSearchSource(): sayqzHandler.SayqzHandlerSource {
+  const n = SAYQZ_SEARCH_SOURCES.length;
+  if (n <= 1) return SAYQZ_SEARCH_SOURCES[0] ?? 'qq';
+  const idx = ((sayqzSourceCursor % n) + n) % n;
+  sayqzSourceCursor = (sayqzSourceCursor + 1) % n;
+  return SAYQZ_SEARCH_SOURCES[idx] ?? 'qq';
+}
+
+const SEARCH_PROVIDERS: SearchProvider[] = [
+  { id: 'fangpi', search3: fangpiHandler.search3 },
+  { id: 'jywav', search3: jywavHandler.search3 },
+  { id: 'cgg', search3: cggHandler.search3 },
+  // sayqz的默认search3会并发请求多个source；这里也保持“每次只打 1 个上游”，但在子源间轮询。
+  {
+    id: 'sayqz',
+    search3: (keyword, limit) =>
+      sayqzHandler.search3BySource(keyword, limit, pickSayqzSearchSource()),
+  },
+];
+
+const SEARCH_PROVIDER_COOLDOWN_MS = 60_000;
+let searchProviderCursor = 0;
+const searchProviderCooldownUntil = new Map<MusicPlatform, number>();
+
+function normalizeSearchKeyword(value: string): string {
+  return value
+    .trim()
+    .replaceAll('（', '(')
+    .replaceAll('）', ')')
+    .replace(/\s+/g, '')
+    .toLowerCase();
+}
+
+function isTitleContainsKeyword(title: string, keyword: string): boolean {
+  const normalizedTitle = normalizeSearchKeyword(title);
+  if (!normalizedTitle) return false;
+  const normalizedKeyword = normalizeSearchKeyword(keyword);
+  if (!normalizedKeyword) return false;
+  return normalizedTitle.includes(normalizedKeyword);
+}
+
+function hasAnyTitleContainsKeyword(
+  tracks: MusicTrack[],
+  keyword: string
+): boolean {
+  for (const track of tracks) {
+    if (isTitleContainsKeyword(track.title, keyword)) return true;
+  }
+  return false;
+}
+
+function getProviderOrder(): SearchProvider[] {
+  const n = SEARCH_PROVIDERS.length;
+  if (n <= 1) return SEARCH_PROVIDERS;
+
+  const start = ((searchProviderCursor % n) + n) % n;
+  searchProviderCursor = (searchProviderCursor + 1) % n;
+
+  return [
+    ...SEARCH_PROVIDERS.slice(start),
+    ...SEARCH_PROVIDERS.slice(0, start),
+  ];
+}
+
+function isProviderAvailable(provider: SearchProvider): boolean {
+  const until = searchProviderCooldownUntil.get(provider.id) ?? 0;
+  return Date.now() >= until;
+}
+
+function markProviderCooldown(provider: SearchProvider) {
+  searchProviderCooldownUntil.set(
+    provider.id,
+    Date.now() + SEARCH_PROVIDER_COOLDOWN_MS
+  );
+}
+
 async function searchAllMusicTracksViaHandlers(
   keyword: string,
   limit: number
 ): Promise<MusicTrack[]> {
-  const perPlatformLimit = clampLimit(limit);
+  const target = clampLimit(limit);
+  const preferred = getProviderOrder().filter(isProviderAvailable);
+  const provider = preferred[0] ?? SEARCH_PROVIDERS[0];
 
-  const tasks = [
-    fangpiHandler.search3(keyword, perPlatformLimit),
-    jywavHandler.search3(keyword, perPlatformLimit),
-    cggHandler.search3(keyword, perPlatformLimit),
-    sayqzHandler.search3(keyword, perPlatformLimit),
-  ] as const;
-
-  const settled = await Promise.allSettled(tasks);
-  const merged: MusicTrack[] = [];
-
-  for (const res of settled) {
-    if (res.status !== 'fulfilled') continue;
-    merged.push(...res.value);
+  let tracks: MusicTrack[] = [];
+  try {
+    tracks = await provider.search3(keyword, target);
+  } catch {
+    markProviderCooldown(provider);
+    tracks = [];
   }
 
-  return merged;
+  // 如果没有“标题包含关键字”的歌曲，就只用 sayqz 的 qq 源再搜一次。
+  if (!hasAnyTitleContainsKeyword(tracks, keyword)) {
+    return await sayqzHandler.search3BySource(keyword, target, 'qq');
+  }
+
+  return tracks;
 }
 
 async function searchSongsViaMusicApi(
