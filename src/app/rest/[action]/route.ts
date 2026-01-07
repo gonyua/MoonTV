@@ -6,6 +6,10 @@ import * as jywavHandler from './jywavHandler';
 import * as sayqzHandler from './sayqzHandler';
 import { clampLimit } from './shared';
 import type { MusicTrack } from './types';
+import {
+  importNeteaseLikesToD1,
+  listMusicLikesFromD1,
+} from '../netease/likesImport';
 import * as neteaseHandler from '../netease/neteaseHandler';
 
 export const runtime = 'edge';
@@ -680,9 +684,60 @@ export async function GET(
     const password = searchParams.get('p');
     const valid = await isValidViaLogin(request, username, password);
     if (!valid) return subsonicFailed('Invalid username or password');
+    if (!username) return subsonicFailed('Missing u');
 
     const id = (searchParams.get('id') ?? '').trim();
     if (!id) return subsonicFailed('Missing id');
+
+    // 自定义：xx-like（喜欢列表）
+    if (id.endsWith('xx-like')) {
+      try {
+        const likes = await listMusicLikesFromD1({ username });
+
+        const fallbackIso = new Date().toISOString();
+        const defaultCoverArt = new URL(
+          '/logo.png',
+          getPublicOrigin(request)
+        ).toString();
+
+        const coverArt =
+          likes.find((it) => Boolean(it.cover))?.cover || defaultCoverArt;
+
+        const times = likes.map((it) => it.saveTime).filter(Number.isFinite);
+        const createdMs = times.length ? Math.min(...times) : Date.now();
+        const changedMs = times.length ? Math.max(...times) : Date.now();
+
+        const created = new Date(createdMs).toISOString();
+        const changed = new Date(changedMs).toISOString();
+
+        const entry = likes.map((it) => ({
+          id: `${id}-${it.title}`,
+          isDir: false as const,
+          title: it.title,
+          artist: it.artist,
+          coverArt: it.cover || coverArt,
+        }));
+
+        return subsonicOk({
+          playlist: {
+            id,
+            name: '喜欢的音乐',
+            coverArt,
+            songCount: entry.length,
+            duration: 0,
+            created: created || fallbackIso,
+            changed: changed || fallbackIso,
+            entry,
+          },
+        });
+      } catch (err) {
+        const message =
+          err instanceof Error && err.message
+            ? err.message
+            : 'Failed to load likes';
+        return subsonicFailed(message);
+      }
+    }
 
     const parsed = parseRestPlatformId(id);
     if (!parsed || parsed.platform !== 'sayqz')
@@ -757,6 +812,58 @@ export async function GET(
         return subsonicFailed(message);
       }
     });
+  }
+
+  // importNeteaseLikes（自定义：网易云“喜欢的音乐/歌单”导入到 D1）
+  if (action === 'importNeteaseLikes') {
+    const { searchParams } = new URL(request.url);
+    const username = searchParams.get('u');
+    const password = searchParams.get('p');
+    const valid = await isValidViaLogin(request, username, password);
+
+    const headers = new Headers();
+    headers.set('Cache-Control', 'no-store');
+
+    if (!valid) {
+      return NextResponse.json(
+        { ok: false, error: 'Invalid username or password' },
+        { status: 401, headers }
+      );
+    }
+    if (!username) {
+      return NextResponse.json(
+        { ok: false, error: 'Missing u' },
+        { status: 400, headers }
+      );
+    }
+
+    // 真实的 URL 从 share 文本中解析
+    const shareText = searchParams.get('share');
+    if (!shareText) {
+      return NextResponse.json(
+        { ok: false, error: 'Missing share' },
+        { status: 400, headers }
+      );
+    }
+    const limitRaw = searchParams.get('limit');
+    const limit = limitRaw ? toInt(limitRaw, 0) : null;
+
+    try {
+      const result = await importNeteaseLikesToD1({
+        username,
+        shareText,
+        limit: limit && limit > 0 ? limit : null,
+      });
+
+      return NextResponse.json({ ok: true, ...result }, { headers });
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message ? err.message : 'Import failed';
+      return NextResponse.json(
+        { ok: false, error: message },
+        { status: 400, headers }
+      );
+    }
   }
 
   return NextResponse.json({ error: 'Not Found' }, { status: 404 });
