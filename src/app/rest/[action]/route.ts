@@ -6,6 +6,7 @@ import * as jywavHandler from './jywavHandler';
 import * as sayqzHandler from './sayqzHandler';
 import { clampLimit } from './shared';
 import type { MusicTrack } from './types';
+import * as neteaseHandler from '../netease/neteaseHandler';
 
 export const runtime = 'edge';
 
@@ -715,6 +716,46 @@ export async function GET(
           entry,
         },
       });
+    });
+  }
+
+  // getRandomSongs
+  if (action === 'getRandomSongs') {
+    const { searchParams } = new URL(request.url);
+    const username = searchParams.get('u');
+    const password = searchParams.get('p');
+    const valid = await isValidViaLogin(request, username, password);
+
+    if (!valid) {
+      return subsonicFailed('Invalid username or password');
+    }
+
+    // const size = clampInt(toInt(searchParams.get('size'), 20), 0, 200);
+    const size = 50;
+    return await withRestCache(request, async () => {
+      const defaultCoverArt = new URL(
+        '/logo.png',
+        getPublicOrigin(request)
+      ).toString();
+
+      try {
+        const songs = await neteaseHandler.getRandomSongs({
+          size,
+          defaultCoverArt,
+        });
+
+        return subsonicOk({
+          randomSongs: {
+            song: songs,
+          },
+        });
+      } catch (err) {
+        const message =
+          err instanceof Error && err.message
+            ? err.message
+            : 'Failed to fetch songs';
+        return subsonicFailed(message);
+      }
     });
   }
 
