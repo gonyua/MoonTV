@@ -251,6 +251,65 @@ function parseRestPlatformId(
   return { platform: parts[0], id: trimmed };
 }
 
+type ParsedSongIdParam = {
+  id: string;
+  isXxSongId: boolean;
+  xxKeyword: string;
+  initialParsed: ReturnType<typeof parseRestPlatformId> | null;
+};
+
+function parseSongIdParam(
+  rawId: string | null
+):
+  | { ok: true; value: ParsedSongIdParam }
+  | { ok: false; response: NextResponse } {
+  const id = (rawId ?? '').trim();
+  if (!id) return { ok: false, response: subsonicFailed('Missing id') };
+
+  const idParts = id.split('-').filter(Boolean);
+  const isXxSongId = idParts[0] === 'xx';
+  const xxKeyword = isXxSongId ? (idParts.at(-1) ?? '').trim() : '';
+  if (isXxSongId && !xxKeyword)
+    return { ok: false, response: subsonicFailed('Invalid id') };
+
+  const initialParsed = isXxSongId ? null : parseRestPlatformId(id);
+  if (!isXxSongId && !initialParsed)
+    return { ok: false, response: subsonicFailed('Invalid id') };
+
+  return { ok: true, value: { id, isXxSongId, xxKeyword, initialParsed } };
+}
+
+async function resolveSongId(
+  parsedParam: ParsedSongIdParam,
+  onNotFound: () => NextResponse
+): Promise<
+  | {
+      ok: true;
+      resolvedId: string;
+      parsed: NonNullable<ReturnType<typeof parseRestPlatformId>>;
+    }
+  | { ok: false; response: NextResponse }
+> {
+  let resolvedId = parsedParam.id;
+  let parsed = parsedParam.initialParsed;
+
+  if (parsedParam.isXxSongId) {
+    const tracks = await searchAllMusicTracksViaHandlers(
+      parsedParam.xxKeyword,
+      10
+    );
+    const first = tracks[0];
+    if (!first?.uid) return { ok: false, response: onNotFound() };
+
+    resolvedId = first.uid;
+    parsed = parseRestPlatformId(resolvedId);
+  }
+
+  if (!parsed) return { ok: false, response: onNotFound() };
+
+  return { ok: true, resolvedId, parsed };
+}
+
 type SearchProvider = {
   id: MusicPlatform;
   search3: (keyword: string, limit: number) => Promise<MusicTrack[]>;
@@ -488,11 +547,9 @@ export async function GET(
     const valid = await isValidViaLogin(request, username, password);
     if (!valid) return subsonicFailed('Invalid username or password');
 
-    const id = searchParams.get('id');
-    if (!id) return subsonicFailed('Missing id');
-
-    const parsed = parseRestPlatformId(id);
-    if (!parsed) return subsonicFailed('Invalid id');
+    const parsedParamResult = parseSongIdParam(searchParams.get('id'));
+    if (!parsedParamResult.ok) return parsedParamResult.response;
+    const { id } = parsedParamResult.value;
 
     return await withRestCache(request, async () => {
       const defaultCoverArt = new URL(
@@ -500,8 +557,14 @@ export async function GET(
         getPublicOrigin(request)
       ).toString();
 
+      const resolvedResult = await resolveSongId(parsedParamResult.value, () =>
+        subsonicFailed('Song not found')
+      );
+      if (!resolvedResult.ok) return resolvedResult.response;
+      const { resolvedId, parsed } = resolvedResult;
+
       if (parsed.platform === 'fangpi') {
-        const song = await fangpiHandler.getSong(id);
+        const song = await fangpiHandler.getSong(resolvedId);
         if (!song) return subsonicFailed('Song not found');
 
         return subsonicOk({
@@ -517,7 +580,7 @@ export async function GET(
       }
 
       if (parsed.platform === 'jywav') {
-        const song = await jywavHandler.getSong(id);
+        const song = await jywavHandler.getSong(resolvedId);
         if (!song) return subsonicFailed('Song not found');
 
         return subsonicOk({
@@ -533,7 +596,7 @@ export async function GET(
       }
 
       if (parsed.platform === 'sayqz') {
-        const song = await sayqzHandler.getSong(id);
+        const song = await sayqzHandler.getSong(resolvedId);
         if (!song) return subsonicFailed('Song not found');
         return subsonicOk({
           song: {
@@ -548,7 +611,7 @@ export async function GET(
       }
 
       const keywordFallback = (searchParams.get('query') ?? '').trim();
-      const song = await cggHandler.getSong(id, null, keywordFallback);
+      const song = await cggHandler.getSong(resolvedId, null, keywordFallback);
       if (!song) return subsonicFailed('Song not found');
 
       return subsonicOk({
@@ -572,33 +635,36 @@ export async function GET(
     const valid = await isValidViaLogin(request, username, password);
     if (!valid) return subsonicFailed('Invalid username or password');
 
-    const id = searchParams.get('id');
-    if (!id) return subsonicFailed('Missing id');
-
-    const parsed = parseRestPlatformId(id);
-    if (!parsed) return subsonicFailed('Invalid id');
+    const parsedParamResult = parseSongIdParam(searchParams.get('id'));
+    if (!parsedParamResult.ok) return parsedParamResult.response;
 
     return await withRestCache(request, async () => {
+      const resolvedResult = await resolveSongId(parsedParamResult.value, () =>
+        subsonicFailed('Stream url not found')
+      );
+      if (!resolvedResult.ok) return resolvedResult.response;
+      const { resolvedId, parsed } = resolvedResult;
+
       if (parsed.platform === 'fangpi') {
-        const location = await fangpiHandler.stream(id);
+        const location = await fangpiHandler.stream(resolvedId);
         if (!location) return subsonicFailed('Stream url not found');
         return NextResponse.redirect(location, 307);
       }
 
       if (parsed.platform === 'jywav') {
-        const location = await jywavHandler.stream(id);
+        const location = await jywavHandler.stream(resolvedId);
         if (!location) return subsonicFailed('Stream url not found');
         return NextResponse.redirect(location, 307);
       }
 
       if (parsed.platform === 'sayqz') {
-        const location = await sayqzHandler.stream(id);
+        const location = await sayqzHandler.stream(resolvedId);
         if (!location) return subsonicFailed('Stream url not found');
         return NextResponse.redirect(location, 307);
       }
 
       const keywordFallback = (searchParams.get('query') ?? '').trim();
-      const url = await cggHandler.stream(id, null, keywordFallback);
+      const url = await cggHandler.stream(resolvedId, null, keywordFallback);
       if (!url) return subsonicFailed('Stream url not found');
       return NextResponse.redirect(url, 307);
     });
@@ -612,23 +678,30 @@ export async function GET(
     const valid = await isValidViaLogin(request, username, password);
     if (!valid) return subsonicFailed('Invalid username or password');
 
-    const id = searchParams.get('id');
-    if (!id) return subsonicFailed('Missing id');
-
-    const parsed = parseRestPlatformId(id);
-    if (!parsed) return subsonicFailed('Invalid id');
+    const parsedParamResult = parseSongIdParam(searchParams.get('id'));
+    if (!parsedParamResult.ok) return parsedParamResult.response;
 
     return await withRestCache(request, async () => {
+      const resolvedResult = await resolveSongId(parsedParamResult.value, () =>
+        subsonicOk({})
+      );
+      if (!resolvedResult.ok) return resolvedResult.response;
+      const { resolvedId, parsed } = resolvedResult;
+
       let lrc: string | null = null;
       if (parsed.platform === 'fangpi') {
-        lrc = await fangpiHandler.getLyricsBySongId(id);
+        lrc = await fangpiHandler.getLyricsBySongId(resolvedId);
       } else if (parsed.platform === 'jywav') {
-        lrc = await jywavHandler.getLyricsBySongId(id);
+        lrc = await jywavHandler.getLyricsBySongId(resolvedId);
       } else if (parsed.platform === 'sayqz') {
-        lrc = await sayqzHandler.getLyricsBySongId(id);
+        lrc = await sayqzHandler.getLyricsBySongId(resolvedId);
       } else {
         const keywordFallback = (searchParams.get('query') ?? '').trim();
-        lrc = await cggHandler.getLyricsBySongId(id, null, keywordFallback);
+        lrc = await cggHandler.getLyricsBySongId(
+          resolvedId,
+          null,
+          keywordFallback
+        );
       }
 
       const structured = lrc ? lrcToStructuredLyrics(lrc) : null;
