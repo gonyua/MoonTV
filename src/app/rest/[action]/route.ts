@@ -6,11 +6,11 @@ import * as jywavHandler from './jywavHandler';
 import * as sayqzHandler from './sayqzHandler';
 import { clampLimit } from './shared';
 import type { MusicTrack } from './types';
+import { KimiLikesRecommender } from '../netease/kimiLikesRecommender';
 import {
   importNeteaseLikesToD1,
   listMusicLikesFromD1,
 } from '../netease/likesImport';
-import * as neteaseHandler from '../netease/neteaseHandler';
 
 export const runtime = 'edge';
 
@@ -186,6 +186,11 @@ function subsonicFailed(message: string): NextResponse {
   };
 
   return NextResponse.json(body);
+}
+
+function withNoStore(response: NextResponse): NextResponse {
+  response.headers.set('Cache-Control', 'no-store');
+  return response;
 }
 
 async function isValidViaLogin(
@@ -865,36 +870,51 @@ export async function GET(
     const valid = await isValidViaLogin(request, username, password);
 
     if (!valid) {
-      return subsonicFailed('Invalid username or password');
+      return withNoStore(subsonicFailed('Invalid username or password'));
     }
 
-    // const size = clampInt(toInt(searchParams.get('size'), 20), 0, 200);
-    const size = 50;
-    return await withRestCache(request, async () => {
-      const defaultCoverArt = new URL(
-        '/logo.png',
-        getPublicOrigin(request)
-      ).toString();
+    if (!username) {
+      return withNoStore(subsonicFailed('Missing u'));
+    }
 
-      try {
-        const songs = await neteaseHandler.getRandomSongs({
-          size,
-          defaultCoverArt,
-        });
+    const defaultCoverArt = new URL('/logo.png', getPublicOrigin(request))
+      .toString()
+      .trim();
 
-        return subsonicOk({
-          randomSongs: {
-            song: songs,
-          },
-        });
-      } catch (err) {
-        const message =
-          err instanceof Error && err.message
-            ? err.message
-            : 'Failed to fetch songs';
-        return subsonicFailed(message);
+    try {
+      const likes = await listMusicLikesFromD1({ username, limit: 200 });
+      if (!likes.length) {
+        return withNoStore(
+          subsonicFailed('No likes found (请先导入网易云喜欢)')
+        );
       }
-    });
+      const recommender = new KimiLikesRecommender();
+      const tracks = await recommender.getRandomTracksFromLikes({
+        likes,
+        count: 20,
+        searchTracks: searchAllMusicTracksViaHandlers,
+      });
+
+      return withNoStore(
+        subsonicOk({
+          randomSongs: {
+            song: tracks.map((chosen) => ({
+              id: `xx-netease-${chosen.title}`,
+              isDir: false as const,
+              title: chosen.title,
+              artist: chosen.artist,
+              coverArt: chosen.cover || defaultCoverArt,
+            })),
+          },
+        })
+      );
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : 'Failed to fetch songs';
+      return withNoStore(subsonicFailed(message));
+    }
   }
 
   // importNeteaseLikes（自定义：网易云“喜欢的音乐/歌单”导入到 D1）
