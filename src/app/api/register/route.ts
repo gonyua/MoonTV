@@ -108,7 +108,7 @@ export async function POST(req: NextRequest) {
       const response = NextResponse.json({ ok: true });
       const cookieValue = await generateAuthCookie(username);
       const expires = new Date();
-      expires.setDate(expires.getDate() + 7); // 7天过期
+      expires.setDate(expires.getDate() + 90); // 90天过期
 
       response.cookies.set('auth', cookieValue, {
         path: '/',
