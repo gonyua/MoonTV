@@ -163,3 +163,26 @@ export interface BoxOfficeResult {
   updateTime: string;
   list: BoxOfficeItem[];
 }
+
+export interface MovieSquareItem {
+  rank: number;
+  title: string;
+  year?: string;
+  releaseDate: string;
+  grossWan: number;
+  grossText: string;
+  avgPrice?: number;
+  avgPeoplePerShow?: number;
+  movieId: string;
+  detailUrl: string;
+}
+
+export interface MovieSquareResult {
+  code: number;
+  message: string;
+  selectedYear: string;
+  yearLabel: string;
+  updateTime: string;
+  totalGrossText: string;
+  list: MovieSquareItem[];
+}

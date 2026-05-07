@@ -3,7 +3,8 @@ import { Suspense } from 'react';
 import NavsPageClient from './NavsPageClient';
 
 export const metadata = {
-  title: '导航 - MoonTV',
+  title: '导航 - navs',
+  manifest: '/manifest-navs.json',
 };
 
 export const runtime = 'edge';

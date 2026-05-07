@@ -9,16 +9,21 @@ const path = require('path');
 const projectRoot = path.resolve(__dirname, '..');
 const publicDir = path.join(projectRoot, 'public');
 const manifestPath = path.join(publicDir, 'manifest.json');
+const navsManifestPath = path.join(publicDir, 'manifest-navs.json');
+const moviesquareManifestPath = path.join(
+  publicDir,
+  'manifest-moviesquare.json'
+);
 
 // 从环境变量获取站点名称
 const siteName = process.env.SITE_NAME || 'MoonTV';
 
 // manifest.json 模板
-const manifestTemplate = {
+const createManifest = (startUrl) => ({
   name: siteName,
   short_name: siteName,
   description: '影视聚合',
-  start_url: '/',
+  start_url: startUrl,
   scope: '/',
   display: 'standalone',
   background_color: '#000000',
@@ -46,7 +51,7 @@ const manifestTemplate = {
       type: 'image/png',
     },
   ],
-};
+});
 
 try {
   // 确保 public 目录存在
@@ -55,7 +60,15 @@ try {
   }
 
   // 写入 manifest.json
-  fs.writeFileSync(manifestPath, JSON.stringify(manifestTemplate, null, 2));
+  fs.writeFileSync(manifestPath, JSON.stringify(createManifest('/'), null, 2));
+  fs.writeFileSync(
+    navsManifestPath,
+    JSON.stringify(createManifest('/navs'), null, 2)
+  );
+  fs.writeFileSync(
+    moviesquareManifestPath,
+    JSON.stringify(createManifest('/moviesquare'), null, 2)
+  );
   console.log(`✅ Generated manifest.json with site name: ${siteName}`);
 } catch (error) {
   console.error('❌ Error generating manifest.json:', error);
