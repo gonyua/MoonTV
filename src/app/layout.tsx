@@ -32,6 +32,25 @@ export async function generateMetadata(): Promise<Metadata> {
     title: siteName,
     description: '影视聚合',
     manifest: '/manifest.json',
+    appleWebApp: {
+      capable: true,
+      title: siteName,
+      statusBarStyle: 'black',
+    },
+    icons: {
+      apple: [
+        {
+          url: '/icons/icon-192x192.png',
+          sizes: '192x192',
+          type: 'image/png',
+        },
+        {
+          url: '/icons/icon-256x256.png',
+          sizes: '256x256',
+          type: 'image/png',
+        },
+      ],
+    },
   };
 }
 
