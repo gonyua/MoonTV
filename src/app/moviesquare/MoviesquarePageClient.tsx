@@ -4,12 +4,75 @@ import { Info } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
-import { MovieSquareItem, MovieSquareResult } from '@/lib/types';
+import { getDoubanCategories } from '@/lib/client/douban.client';
+import {
+  DoubanItem,
+  DoubanResult,
+  MovieSquareItem,
+  MovieSquareResult,
+} from '@/lib/types';
 
 const YEARS = [
   'all',
   ...Array.from({ length: 16 }, (_, index) => String(2026 - index)),
 ];
+
+type MoviesquareTab = 'boxoffice' | 'hot' | 'records';
+type HotSectionKey = (typeof HOT_SECTION_CONFIGS)[number]['key'];
+type MovieSquareRecordType = 'movie' | 'tv';
+
+interface HotSection {
+  key: HotSectionKey;
+  title: string;
+  type: 'movie' | 'tv';
+  typeLabel: string;
+  list: DoubanItem[];
+  loading: boolean;
+  error: string | null;
+}
+
+interface MovieSquareRecord {
+  title: string;
+  year: string;
+  type: MovieSquareRecordType;
+  typeLabel: string;
+  sourceLabel: string;
+  rate?: string;
+  grossText?: string;
+  detailUrl?: string;
+  doubanId?: string;
+  saveTime: number;
+}
+
+const MOVIESQUARE_RECORDS_KEY = 'moontv_moviesquare_records';
+const MOVIESQUARE_RECORDS_LIMIT = 100;
+
+const HOT_SECTION_CONFIGS = [
+  {
+    key: 'nowplaying',
+    title: '影院热映',
+    type: 'movie',
+    typeLabel: '电影',
+  },
+  {
+    key: 'hotMovies',
+    title: '豆瓣热门',
+    type: 'movie',
+    typeLabel: '电影',
+  },
+  {
+    key: 'hotTvShows',
+    title: '热播新剧',
+    type: 'tv',
+    typeLabel: '剧集',
+  },
+  {
+    key: 'hotVarietyShows',
+    title: '热播综艺',
+    type: 'tv',
+    typeLabel: '综艺',
+  },
+] as const;
 
 function getYearLabel(year: string) {
   return year === 'all' ? '全部' : year;
@@ -53,6 +116,21 @@ function getInitialYear(value: string | null) {
   return YEARS.includes(value) ? value : '2026';
 }
 
+function getInitialTab(value: string | null): MoviesquareTab {
+  if (value === 'records') return 'records';
+  return value === 'hot' ? 'hot' : 'boxoffice';
+}
+
+function getInitialHotSection(value: string | null): HotSectionKey {
+  return HOT_SECTION_CONFIGS.some((section) => section.key === value)
+    ? (value as HotSectionKey)
+    : 'nowplaying';
+}
+
+function getMovieSquareYear(item: MovieSquareItem) {
+  return item.year || item.releaseDate?.match(/\d{4}/)?.[0] || '';
+}
+
 function getRankClassName(rank: number) {
   if (rank === 1) {
     return 'bg-[#e83355] text-white shadow-[0_2px_4px_rgba(232,51,85,0.28)]';
@@ -69,15 +147,92 @@ function getRankClassName(rank: number) {
   return 'text-gray-400 dark:text-gray-500';
 }
 
+function createInitialHotSections(): HotSection[] {
+  return HOT_SECTION_CONFIGS.map((section) => ({
+    ...section,
+    list: [],
+    loading: true,
+    error: null,
+  }));
+}
+
+function getRecordKey(
+  record: Pick<MovieSquareRecord, 'title' | 'year' | 'type'>
+) {
+  return `${record.title.trim()}::${record.year || ''}::${record.type}`;
+}
+
+function readMovieSquareRecords(): MovieSquareRecord[] {
+  if (typeof window === 'undefined') return [];
+
+  try {
+    const raw = localStorage.getItem(MOVIESQUARE_RECORDS_KEY);
+    if (!raw) return [];
+    const records = JSON.parse(raw) as MovieSquareRecord[];
+    if (!Array.isArray(records)) return [];
+
+    return records
+      .filter((record) => record?.title && record?.type && record?.saveTime)
+      .sort((a, b) => b.saveTime - a.saveTime)
+      .slice(0, MOVIESQUARE_RECORDS_LIMIT);
+  } catch {
+    return [];
+  }
+}
+
+function writeMovieSquareRecord(record: Omit<MovieSquareRecord, 'saveTime'>) {
+  if (typeof window === 'undefined') return [];
+
+  const nextRecord: MovieSquareRecord = {
+    ...record,
+    title: record.title.trim(),
+    year: record.year || '',
+    saveTime: Date.now(),
+  };
+
+  if (!nextRecord.title) {
+    return readMovieSquareRecords();
+  }
+
+  const nextKey = getRecordKey(nextRecord);
+  const records = readMovieSquareRecords().filter(
+    (item) => getRecordKey(item) !== nextKey
+  );
+  const nextRecords = [nextRecord, ...records].slice(
+    0,
+    MOVIESQUARE_RECORDS_LIMIT
+  );
+
+  try {
+    localStorage.setItem(MOVIESQUARE_RECORDS_KEY, JSON.stringify(nextRecords));
+  } catch {
+    // Ignore storage quota or privacy mode failures.
+  }
+
+  return nextRecords;
+}
+
 export default function MoviesquarePageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const [activeTab, setActiveTab] = useState<MoviesquareTab>(() =>
+    getInitialTab(searchParams.get('tab'))
+  );
+  const [activeHotSectionKey, setActiveHotSectionKey] = useState<HotSectionKey>(
+    () => getInitialHotSection(searchParams.get('section'))
+  );
   const [selectedYear, setSelectedYear] = useState(() =>
     getInitialYear(searchParams.get('year'))
   );
   const [data, setData] = useState<MovieSquareResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hotSections, setHotSections] = useState<HotSection[]>(() =>
+    createInitialHotSections()
+  );
+  const [records, setRecords] = useState<MovieSquareRecord[]>(() =>
+    readMovieSquareRecords()
+  );
 
   const title = useMemo(() => {
     return selectedYear === 'all'
@@ -86,7 +241,25 @@ export default function MoviesquarePageClient() {
   }, [selectedYear]);
 
   useEffect(() => {
+    if (activeTab !== 'records') return;
+    setRecords(readMovieSquareRecords());
+  }, [activeTab]);
+
+  const activeHotSection = useMemo(() => {
+    return (
+      hotSections.find((section) => section.key === activeHotSectionKey) ??
+      hotSections[0]
+    );
+  }, [activeHotSectionKey, hotSections]);
+
+  useEffect(() => {
+    const tabFromUrl = getInitialTab(searchParams.get('tab'));
+    const sectionFromUrl = searchParams.get('section');
     const yearFromUrl = getInitialYear(searchParams.get('year'));
+    setActiveTab(tabFromUrl);
+    if (tabFromUrl === 'hot' || sectionFromUrl) {
+      setActiveHotSectionKey(getInitialHotSection(sectionFromUrl));
+    }
     setSelectedYear(yearFromUrl);
   }, [searchParams]);
 
@@ -127,6 +300,123 @@ export default function MoviesquarePageClient() {
     return () => controller.abort();
   }, [selectedYear]);
 
+  useEffect(() => {
+    if (activeTab !== 'hot') return;
+
+    const controller = new AbortController();
+
+    const fetchHotSections = async () => {
+      setHotSections(createInitialHotSections());
+
+      const loaders = HOT_SECTION_CONFIGS.map(async (section) => {
+        try {
+          let result: DoubanResult;
+
+          if (section.key === 'nowplaying') {
+            const response = await fetch('/api/douban/nowplaying', {
+              signal: controller.signal,
+              cache: 'no-store',
+            });
+            result = (await response.json()) as DoubanResult;
+            if (!response.ok || result.code !== 200) {
+              throw new Error(
+                result.message || `获取正在热映失败: ${response.status}`
+              );
+            }
+          } else if (section.key === 'hotMovies') {
+            result = await getDoubanCategories({
+              kind: 'movie',
+              category: '热门',
+              type: '全部',
+              pageLimit: 100,
+            });
+          } else if (section.key === 'hotTvShows') {
+            result = await getDoubanCategories({
+              kind: 'tv',
+              category: 'tv',
+              type: 'tv',
+              pageLimit: 100,
+            });
+          } else {
+            result = await getDoubanCategories({
+              kind: 'tv',
+              category: 'show',
+              type: 'show',
+              pageLimit: 100,
+            });
+          }
+
+          return {
+            key: section.key,
+            list: result.list ?? [],
+            error: null,
+          };
+        } catch (err) {
+          if (controller.signal.aborted) return null;
+          return {
+            key: section.key,
+            list: [],
+            error: err instanceof Error ? err.message : '获取数据失败',
+          };
+        }
+      });
+
+      const results = await Promise.all(loaders);
+      if (controller.signal.aborted) return;
+
+      setHotSections((current) =>
+        current.map((section) => {
+          const result = results.find((item) => item?.key === section.key);
+          if (!result) return section;
+
+          return {
+            ...section,
+            list: result.list,
+            loading: false,
+            error: result.error,
+          };
+        })
+      );
+    };
+
+    fetchHotSections();
+
+    return () => controller.abort();
+  }, [activeTab]);
+
+  const handleTabClick = (tab: MoviesquareTab) => {
+    const params = new URLSearchParams(searchParams.toString());
+
+    if (tab === 'boxoffice') {
+      params.set('tab', tab);
+    } else if (tab === 'hot') {
+      params.set('tab', tab);
+      if (!params.get('section')) {
+        params.set('section', activeHotSectionKey);
+      }
+    } else {
+      params.set('tab', tab);
+    }
+
+    const query = params.toString();
+    router.replace(`/moviesquare${query ? `?${query}` : ''}`, {
+      scroll: false,
+    });
+    setActiveTab(tab);
+  };
+
+  const handleHotSectionClick = (sectionKey: HotSectionKey) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('tab', 'hot');
+    params.set('section', sectionKey);
+
+    const query = params.toString();
+    router.replace(`/moviesquare${query ? `?${query}` : ''}`, {
+      scroll: false,
+    });
+    setActiveHotSectionKey(sectionKey);
+  };
+
   const handleYearClick = (year: string) => {
     const params = new URLSearchParams(searchParams.toString());
     if (year === 'all') {
@@ -147,10 +437,14 @@ export default function MoviesquarePageClient() {
     event: {
       preventDefault: () => void;
       stopPropagation: () => void;
-    }
+    },
+    record?: Omit<MovieSquareRecord, 'saveTime'>
   ) => {
     event.preventDefault();
     event.stopPropagation();
+    if (record) {
+      setRecords(writeMovieSquareRecord(record));
+    }
     await copyTextToClipboard(title);
     window.location.href = 'SenPlayer://';
   };
@@ -160,101 +454,149 @@ export default function MoviesquarePageClient() {
     window.location.href = item.detailUrl;
   };
 
-  return (
-    <main className='min-h-screen bg-white text-gray-950 dark:bg-black dark:text-gray-100'>
-      <div className='mx-auto min-h-screen w-full bg-white dark:bg-black md:max-w-[720px] md:border-x md:border-gray-100 md:shadow-sm md:dark:border-gray-900'>
-        <div className='sticky top-0 z-20 border-b border-gray-100 bg-white/95 backdrop-blur dark:border-gray-900 dark:bg-black/95'>
-          <div className='overflow-x-auto scrollbar-hide'>
-            <div className='flex min-w-max items-center gap-7 px-6 md:px-8'>
-              {YEARS.map((year) => {
-                const active = selectedYear === year;
-                return (
-                  <button
-                    key={year}
-                    type='button'
-                    onClick={() => handleYearClick(year)}
-                    className={`relative h-[44px] shrink-0 text-[14px] font-semibold leading-none tracking-normal transition-colors md:h-[52px] md:text-[16px] ${
-                      active
-                        ? 'text-[#d8213d]'
-                        : 'text-gray-950 hover:text-[#d8213d] dark:text-gray-100 dark:hover:text-[#ff5a70]'
-                    }`}
-                  >
-                    {getYearLabel(year)}
-                    {active && (
-                      <span className='absolute bottom-0 left-1/2 h-[3px] w-6 -translate-x-1/2 rounded-full bg-[#d8213d] md:w-7' />
-                    )}
-                  </button>
-                );
-              })}
+  const openPlayableSearch = (
+    title: string,
+    year: string | undefined,
+    type: 'movie' | 'tv',
+    event: {
+      preventDefault: () => void;
+      stopPropagation: () => void;
+    },
+    record?: Omit<MovieSquareRecord, 'saveTime'>
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const searchTitle = title.trim();
+    if (!searchTitle) return;
+    if (record) {
+      setRecords(writeMovieSquareRecord(record));
+    }
+
+    const params = new URLSearchParams();
+    params.set('title', searchTitle);
+    if (year) {
+      params.set('year', year);
+    }
+    params.set('stype', type);
+    router.push(`/play?${params.toString()}`);
+  };
+
+  const handleHotRowClick = (item: DoubanItem) => {
+    if (!item.id) return;
+    window.location.href = `https://movie.douban.com/subject/${encodeURIComponent(
+      item.id
+    )}`;
+  };
+
+  const createHotRecord = (
+    item: DoubanItem,
+    section: HotSection
+  ): Omit<MovieSquareRecord, 'saveTime'> => ({
+    title: item.title,
+    year: item.year || '',
+    type: section.type,
+    typeLabel: section.typeLabel,
+    sourceLabel: section.title,
+    rate: item.rate || undefined,
+    detailUrl: item.id
+      ? `https://movie.douban.com/subject/${encodeURIComponent(item.id)}`
+      : undefined,
+    doubanId: item.id || undefined,
+  });
+
+  const createBoxOfficeRecord = (
+    item: MovieSquareItem
+  ): Omit<MovieSquareRecord, 'saveTime'> => ({
+    title: item.title,
+    year: getMovieSquareYear(item),
+    type: 'movie',
+    typeLabel: '电影',
+    sourceLabel: '票房',
+    grossText: item.grossText,
+    detailUrl: item.detailUrl || undefined,
+  });
+
+  const createRecordSnapshot = (
+    record: MovieSquareRecord
+  ): Omit<MovieSquareRecord, 'saveTime'> => ({
+    title: record.title,
+    year: record.year,
+    type: record.type,
+    typeLabel: record.typeLabel,
+    sourceLabel: record.sourceLabel,
+    rate: record.rate,
+    grossText: record.grossText,
+    detailUrl: record.detailUrl,
+    doubanId: record.doubanId,
+  });
+
+  const handleRecordRowClick = (record: MovieSquareRecord) => {
+    if (record.detailUrl) {
+      window.location.href = record.detailUrl;
+      return;
+    }
+
+    if (record.doubanId) {
+      window.location.href = `https://movie.douban.com/subject/${encodeURIComponent(
+        record.doubanId
+      )}`;
+    }
+  };
+
+  const renderSkeletonRows = (count: number) => (
+    <div className='divide-y divide-gray-50 dark:divide-gray-900'>
+      {Array.from({ length: count }).map((_, index) => (
+        <div
+          key={index}
+          className='grid h-[62px] grid-cols-[49%_22%_15%_14%] items-center px-4 md:h-[74px] md:px-7'
+        >
+          <div className='flex items-center gap-4'>
+            <div className='h-7 w-7 rounded bg-gray-100 dark:bg-gray-900' />
+            <div className='space-y-2'>
+              <div className='h-4 w-32 rounded bg-gray-100 dark:bg-gray-900' />
+              <div className='h-3 w-20 rounded bg-gray-100 dark:bg-gray-900' />
             </div>
           </div>
+          <div className='ml-auto h-4 w-14 rounded bg-gray-100 dark:bg-gray-900' />
+          <div className='ml-auto h-4 w-8 rounded bg-gray-100 dark:bg-gray-900' />
+          <div className='ml-auto h-4 w-8 rounded bg-gray-100 dark:bg-gray-900' />
         </div>
+      ))}
+    </div>
+  );
 
-        <section className='border-b border-gray-100 bg-white px-4 pb-2 pt-3 dark:border-gray-900 dark:bg-black md:px-7 md:pt-4'>
-          <div className='flex flex-wrap items-baseline gap-2'>
-            <h1 className='text-[16px] font-extrabold leading-tight tracking-normal text-gray-950 dark:text-gray-50 md:text-[19px]'>
-              {title}
-            </h1>
-            {(data?.updateTime || data?.totalGrossText) && (
-              <div className='flex items-baseline gap-1 text-[11px] font-semibold leading-tight text-gray-400 dark:text-gray-500 md:text-[13px]'>
-                <span>
-                  (
-                  {[
-                    data?.updateTime ? `截至 ${data.updateTime}` : '',
-                    data?.totalGrossText || '',
-                  ]
-                    .filter(Boolean)
-                    .join(' ')}
-                  )
-                </span>
-                <Info className='relative top-0.5 h-3 w-3 text-gray-400 dark:text-gray-600' />
-              </div>
-            )}
-          </div>
-        </section>
+  const renderHotSection = (section: HotSection) => (
+    <section
+      key={section.key}
+      className='border-b border-gray-100 bg-white dark:border-gray-900 dark:bg-black'
+    >
+      <div className='grid grid-cols-[49%_22%_15%_14%] bg-gray-50 px-4 py-3 text-[12px] font-medium text-gray-700 dark:bg-[#101010] dark:text-gray-300 md:px-7 md:text-[14px]'>
+        <div>排名</div>
+        <div className='text-right'>评分</div>
+        <div className='whitespace-nowrap text-right'>年份</div>
+        <div className='whitespace-nowrap text-right'>类型</div>
+      </div>
 
-        <div className='grid grid-cols-[49%_22%_15%_14%] bg-gray-50 px-4 py-3 text-[12px] font-medium text-gray-700 dark:bg-[#101010] dark:text-gray-300 md:px-7 md:text-[14px]'>
-          <div>排名</div>
-          <div className='text-right'>票房</div>
-          <div className='whitespace-nowrap text-right'>平均票价</div>
-          <div className='whitespace-nowrap text-right'>场均人数</div>
+      {section.loading ? (
+        renderSkeletonRows(6)
+      ) : section.error ? (
+        <div className='px-5 py-12 text-center text-sm text-gray-500 dark:text-gray-400'>
+          {section.error}
         </div>
-
-        {loading ? (
-          <div className='divide-y divide-gray-50 dark:divide-gray-900'>
-            {Array.from({ length: 12 }).map((_, index) => (
+      ) : section.list.length ? (
+        <div className='divide-y divide-gray-50 dark:divide-gray-900'>
+          {section.list.map((item, index) => {
+            const rank = index + 1;
+            return (
               <div
-                key={index}
-                className='grid h-[62px] grid-cols-[49%_22%_15%_14%] items-center px-4 md:h-[74px] md:px-7'
-              >
-                <div className='flex items-center gap-4'>
-                  <div className='h-7 w-7 rounded bg-gray-100 dark:bg-gray-900' />
-                  <div className='space-y-2'>
-                    <div className='h-4 w-32 rounded bg-gray-100 dark:bg-gray-900' />
-                    <div className='h-3 w-20 rounded bg-gray-100 dark:bg-gray-900' />
-                  </div>
-                </div>
-                <div className='ml-auto h-4 w-14 rounded bg-gray-100 dark:bg-gray-900' />
-                <div className='ml-auto h-4 w-8 rounded bg-gray-100 dark:bg-gray-900' />
-                <div className='ml-auto h-4 w-8 rounded bg-gray-100 dark:bg-gray-900' />
-              </div>
-            ))}
-          </div>
-        ) : error ? (
-          <div className='px-5 py-16 text-center text-sm text-gray-500 dark:text-gray-400'>
-            {error}
-          </div>
-        ) : data?.list.length ? (
-          <div className='divide-y divide-gray-50 dark:divide-gray-900'>
-            {data.list.map((item) => (
-              <div
-                key={`${item.rank}-${item.movieId || item.title}`}
+                key={`${section.key}-${item.id || item.title}-${index}`}
                 role='link'
                 tabIndex={0}
-                onClick={() => handleRowClick(item)}
+                onClick={() => handleHotRowClick(item)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') {
-                    handleRowClick(item);
+                    handleHotRowClick(item);
                   }
                 }}
                 className='grid min-h-[62px] w-full grid-cols-[49%_22%_15%_14%] items-center px-4 text-left transition-colors hover:bg-gray-50 active:bg-gray-100 dark:hover:bg-[#0d0d0d] dark:active:bg-[#151515] md:min-h-[74px] md:px-7'
@@ -262,24 +604,38 @@ export default function MoviesquarePageClient() {
                 <div className='flex min-w-0 items-center gap-3 pr-2'>
                   <span
                     className={`flex h-[22px] w-[22px] shrink-0 items-center justify-center text-[14px] font-bold ${getRankClassName(
-                      item.rank
+                      rank
                     )} ${
-                      item.rank <= 3
-                        ? 'rounded-md'
-                        : 'rounded-none bg-transparent'
+                      rank <= 3 ? 'rounded-md' : 'rounded-none bg-transparent'
                     }`}
                   >
-                    {item.rank}
+                    {rank}
                   </span>
                   <div className='min-w-0'>
                     <div className='flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5'>
-                      <span className='min-w-0 break-words text-[13px] font-bold leading-tight text-gray-950 dark:text-gray-50 md:text-[15px]'>
-                        {item.title}
-                      </span>
                       <button
                         type='button'
                         onClick={(event) => {
-                          void openSenPlayer(item.title, event);
+                          void openSenPlayer(
+                            item.title,
+                            event,
+                            createHotRecord(item, section)
+                          );
+                        }}
+                        className='min-w-0 break-words text-left text-[13px] font-bold leading-tight text-gray-950 dark:text-gray-50 md:text-[15px]'
+                      >
+                        {item.title}
+                      </button>
+                      <button
+                        type='button'
+                        onClick={(event) => {
+                          openPlayableSearch(
+                            item.title,
+                            item.year,
+                            section.type,
+                            event,
+                            createHotRecord(item, section)
+                          );
                         }}
                         className='shrink-0 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 md:text-[11px]'
                       >
@@ -287,27 +643,352 @@ export default function MoviesquarePageClient() {
                       </button>
                     </div>
                     <div className='mt-1 text-[12px] leading-none text-gray-500 dark:text-gray-500 md:text-[13px]'>
-                      {item.releaseDate || item.year || '-'}
+                      {item.year || '-'}
                     </div>
                   </div>
                 </div>
 
                 <div className='whitespace-nowrap text-right text-[14px] font-semibold text-[#c82643] dark:text-[#ff5a70] md:text-[15px]'>
-                  {item.grossText}
+                  {item.rate || '-'}
                 </div>
                 <div className='text-right text-[14px] font-medium text-gray-950 dark:text-gray-100 md:text-[15px]'>
-                  {formatNumber(item.avgPrice)}
+                  {item.year || '-'}
                 </div>
                 <div className='text-right text-[14px] font-medium text-gray-950 dark:text-gray-100 md:text-[15px]'>
-                  {formatNumber(item.avgPeoplePerShow)}
+                  {section.typeLabel}
                 </div>
               </div>
-            ))}
+            );
+          })}
+        </div>
+      ) : (
+        <div className='px-5 py-12 text-center text-sm text-gray-500 dark:text-gray-400'>
+          暂无数据
+        </div>
+      )}
+    </section>
+  );
+
+  const renderRecords = () => (
+    <section className='border-b border-gray-100 bg-white dark:border-gray-900 dark:bg-black'>
+      <div className='grid grid-cols-[49%_22%_15%_14%] bg-gray-50 px-4 py-3 text-[12px] font-medium text-gray-700 dark:bg-[#101010] dark:text-gray-300 md:px-7 md:text-[14px]'>
+        <div>排名</div>
+        <div className='text-right'>来源</div>
+        <div className='whitespace-nowrap text-right'>年份</div>
+        <div className='whitespace-nowrap text-right'>类型</div>
+      </div>
+
+      {records.length ? (
+        <div className='divide-y divide-gray-50 dark:divide-gray-900'>
+          {records.map((record, index) => {
+            const rank = index + 1;
+            return (
+              <div
+                key={`${record.title}-${record.year}-${record.type}`}
+                role='link'
+                tabIndex={0}
+                onClick={() => handleRecordRowClick(record)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    handleRecordRowClick(record);
+                  }
+                }}
+                className='grid min-h-[62px] w-full grid-cols-[49%_22%_15%_14%] items-center px-4 text-left transition-colors hover:bg-gray-50 active:bg-gray-100 dark:hover:bg-[#0d0d0d] dark:active:bg-[#151515] md:min-h-[74px] md:px-7'
+              >
+                <div className='flex min-w-0 items-center gap-3 pr-2'>
+                  <span
+                    className={`flex h-[22px] w-[22px] shrink-0 items-center justify-center text-[14px] font-bold ${getRankClassName(
+                      rank
+                    )} ${
+                      rank <= 3 ? 'rounded-md' : 'rounded-none bg-transparent'
+                    }`}
+                  >
+                    {rank}
+                  </span>
+                  <div className='min-w-0'>
+                    <div className='flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5'>
+                      <button
+                        type='button'
+                        onClick={(event) => {
+                          void openSenPlayer(
+                            record.title,
+                            event,
+                            createRecordSnapshot(record)
+                          );
+                        }}
+                        className='min-w-0 break-words text-left text-[13px] font-bold leading-tight text-gray-950 dark:text-gray-50 md:text-[15px]'
+                      >
+                        {record.title}
+                      </button>
+                      <button
+                        type='button'
+                        onClick={(event) => {
+                          openPlayableSearch(
+                            record.title,
+                            record.year,
+                            record.type,
+                            event,
+                            createRecordSnapshot(record)
+                          );
+                        }}
+                        className='shrink-0 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 md:text-[11px]'
+                      >
+                        [可播放]
+                      </button>
+                    </div>
+                    <div className='mt-1 text-[12px] leading-none text-gray-500 dark:text-gray-500 md:text-[13px]'>
+                      {record.grossText || record.rate || '-'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className='whitespace-nowrap text-right text-[14px] font-semibold text-[#c82643] dark:text-[#ff5a70] md:text-[15px]'>
+                  {record.sourceLabel || '-'}
+                </div>
+                <div className='text-right text-[14px] font-medium text-gray-950 dark:text-gray-100 md:text-[15px]'>
+                  {record.year || '-'}
+                </div>
+                <div className='text-right text-[14px] font-medium text-gray-950 dark:text-gray-100 md:text-[15px]'>
+                  {record.typeLabel || '-'}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className='px-5 py-16 text-center text-sm text-gray-500 dark:text-gray-400'>
+          暂无记录
+        </div>
+      )}
+    </section>
+  );
+
+  return (
+    <main className='min-h-screen bg-white text-gray-950 dark:bg-black dark:text-gray-100'>
+      <div className='mx-auto min-h-screen w-full bg-white dark:bg-black md:max-w-[720px] md:border-x md:border-gray-100 md:shadow-sm md:dark:border-gray-900'>
+        <div className='sticky top-0 z-20 border-b border-gray-100 bg-white/95 backdrop-blur dark:border-gray-900 dark:bg-black/95'>
+          <div className='flex justify-center px-4 py-2 md:px-8'>
+            <div className='inline-flex overflow-hidden rounded-[3px] border border-[#e83355] bg-white text-[13px] font-bold leading-none dark:bg-black md:text-[14px]'>
+              {[
+                { label: '热映', value: 'hot' as MoviesquareTab },
+                { label: '票房', value: 'boxoffice' as MoviesquareTab },
+                { label: '记录', value: 'records' as MoviesquareTab },
+              ].map((tab) => {
+                const active = activeTab === tab.value;
+                return (
+                  <button
+                    key={tab.value}
+                    type='button'
+                    onClick={() => handleTabClick(tab.value)}
+                    className={`h-7 min-w-[72px] border-r border-[#e83355] px-4 transition-colors last:border-r-0 md:h-8 md:min-w-[82px] ${
+                      active
+                        ? 'bg-[#e83355] text-white'
+                        : 'bg-white text-[#e83355] hover:bg-[#fff1f3] dark:bg-black dark:hover:bg-[#22070c]'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
+          {activeTab === 'hot' ? (
+            <div className='overflow-x-auto scrollbar-hide'>
+              <div className='flex min-w-max items-center gap-7 px-6 md:px-8'>
+                {HOT_SECTION_CONFIGS.map((section) => {
+                  const active = activeHotSectionKey === section.key;
+                  return (
+                    <button
+                      key={section.key}
+                      type='button'
+                      onClick={() => handleHotSectionClick(section.key)}
+                      className={`relative h-[44px] shrink-0 text-[14px] font-semibold leading-none tracking-normal transition-colors md:h-[52px] md:text-[16px] ${
+                        active
+                          ? 'text-[#d8213d]'
+                          : 'text-gray-950 hover:text-[#d8213d] dark:text-gray-100 dark:hover:text-[#ff5a70]'
+                      }`}
+                    >
+                      {section.title}
+                      {active && (
+                        <span className='absolute bottom-0 left-1/2 h-[3px] w-6 -translate-x-1/2 rounded-full bg-[#d8213d] md:w-7' />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : activeTab === 'boxoffice' ? (
+            <div className='overflow-x-auto scrollbar-hide'>
+              <div className='flex min-w-max items-center gap-7 px-6 md:px-8'>
+                {YEARS.map((year) => {
+                  const active = selectedYear === year;
+                  return (
+                    <button
+                      key={year}
+                      type='button'
+                      onClick={() => handleYearClick(year)}
+                      className={`relative h-[44px] shrink-0 text-[14px] font-semibold leading-none tracking-normal transition-colors md:h-[52px] md:text-[16px] ${
+                        active
+                          ? 'text-[#d8213d]'
+                          : 'text-gray-950 hover:text-[#d8213d] dark:text-gray-100 dark:hover:text-[#ff5a70]'
+                      }`}
+                    >
+                      {getYearLabel(year)}
+                      {active && (
+                        <span className='absolute bottom-0 left-1/2 h-[3px] w-6 -translate-x-1/2 rounded-full bg-[#d8213d] md:w-7' />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        {activeTab === 'hot' ? (
+          activeHotSection ? (
+            renderHotSection(activeHotSection)
+          ) : null
+        ) : activeTab === 'records' ? (
+          renderRecords()
         ) : (
-          <div className='px-5 py-16 text-center text-sm text-gray-500 dark:text-gray-400'>
-            暂无票房数据
-          </div>
+          <>
+            <section className='border-b border-gray-100 bg-white px-4 pb-2 pt-3 dark:border-gray-900 dark:bg-black md:px-7 md:pt-4'>
+              <div className='flex flex-wrap items-baseline gap-2'>
+                <h1 className='text-[16px] font-extrabold leading-tight tracking-normal text-gray-950 dark:text-gray-50 md:text-[19px]'>
+                  {title}
+                </h1>
+                {(data?.updateTime || data?.totalGrossText) && (
+                  <div className='flex items-baseline gap-1 text-[11px] font-semibold leading-tight text-gray-400 dark:text-gray-500 md:text-[13px]'>
+                    <span>
+                      (
+                      {[
+                        data?.updateTime ? `截至 ${data.updateTime}` : '',
+                        data?.totalGrossText || '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
+                      )
+                    </span>
+                    <Info className='relative top-0.5 h-3 w-3 text-gray-400 dark:text-gray-600' />
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <div className='grid grid-cols-[49%_22%_15%_14%] bg-gray-50 px-4 py-3 text-[12px] font-medium text-gray-700 dark:bg-[#101010] dark:text-gray-300 md:px-7 md:text-[14px]'>
+              <div>排名</div>
+              <div className='text-right'>票房</div>
+              <div className='whitespace-nowrap text-right'>平均票价</div>
+              <div className='whitespace-nowrap text-right'>场均人数</div>
+            </div>
+
+            {loading ? (
+              <div className='divide-y divide-gray-50 dark:divide-gray-900'>
+                {Array.from({ length: 12 }).map((_, index) => (
+                  <div
+                    key={index}
+                    className='grid h-[62px] grid-cols-[49%_22%_15%_14%] items-center px-4 md:h-[74px] md:px-7'
+                  >
+                    <div className='flex items-center gap-4'>
+                      <div className='h-7 w-7 rounded bg-gray-100 dark:bg-gray-900' />
+                      <div className='space-y-2'>
+                        <div className='h-4 w-32 rounded bg-gray-100 dark:bg-gray-900' />
+                        <div className='h-3 w-20 rounded bg-gray-100 dark:bg-gray-900' />
+                      </div>
+                    </div>
+                    <div className='ml-auto h-4 w-14 rounded bg-gray-100 dark:bg-gray-900' />
+                    <div className='ml-auto h-4 w-8 rounded bg-gray-100 dark:bg-gray-900' />
+                    <div className='ml-auto h-4 w-8 rounded bg-gray-100 dark:bg-gray-900' />
+                  </div>
+                ))}
+              </div>
+            ) : error ? (
+              <div className='px-5 py-16 text-center text-sm text-gray-500 dark:text-gray-400'>
+                {error}
+              </div>
+            ) : data?.list.length ? (
+              <div className='divide-y divide-gray-50 dark:divide-gray-900'>
+                {data.list.map((item) => (
+                  <div
+                    key={`${item.rank}-${item.movieId || item.title}`}
+                    role='link'
+                    tabIndex={0}
+                    onClick={() => handleRowClick(item)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        handleRowClick(item);
+                      }
+                    }}
+                    className='grid min-h-[62px] w-full grid-cols-[49%_22%_15%_14%] items-center px-4 text-left transition-colors hover:bg-gray-50 active:bg-gray-100 dark:hover:bg-[#0d0d0d] dark:active:bg-[#151515] md:min-h-[74px] md:px-7'
+                  >
+                    <div className='flex min-w-0 items-center gap-3 pr-2'>
+                      <span
+                        className={`flex h-[22px] w-[22px] shrink-0 items-center justify-center text-[14px] font-bold ${getRankClassName(
+                          item.rank
+                        )} ${
+                          item.rank <= 3
+                            ? 'rounded-md'
+                            : 'rounded-none bg-transparent'
+                        }`}
+                      >
+                        {item.rank}
+                      </span>
+                      <div className='min-w-0'>
+                        <div className='flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5'>
+                          <button
+                            type='button'
+                            onClick={(event) => {
+                              void openSenPlayer(
+                                item.title,
+                                event,
+                                createBoxOfficeRecord(item)
+                              );
+                            }}
+                            className='min-w-0 break-words text-left text-[13px] font-bold leading-tight text-gray-950 dark:text-gray-50 md:text-[15px]'
+                          >
+                            {item.title}
+                          </button>
+                          <button
+                            type='button'
+                            onClick={(event) => {
+                              openPlayableSearch(
+                                item.title,
+                                getMovieSquareYear(item),
+                                'movie',
+                                event,
+                                createBoxOfficeRecord(item)
+                              );
+                            }}
+                            className='shrink-0 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 md:text-[11px]'
+                          >
+                            [可播放]
+                          </button>
+                        </div>
+                        <div className='mt-1 text-[12px] leading-none text-gray-500 dark:text-gray-500 md:text-[13px]'>
+                          {item.releaseDate || item.year || '-'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className='whitespace-nowrap text-right text-[14px] font-semibold text-[#c82643] dark:text-[#ff5a70] md:text-[15px]'>
+                      {item.grossText}
+                    </div>
+                    <div className='text-right text-[14px] font-medium text-gray-950 dark:text-gray-100 md:text-[15px]'>
+                      {formatNumber(item.avgPrice)}
+                    </div>
+                    <div className='text-right text-[14px] font-medium text-gray-950 dark:text-gray-100 md:text-[15px]'>
+                      {formatNumber(item.avgPeoplePerShow)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className='px-5 py-16 text-center text-sm text-gray-500 dark:text-gray-400'>
+                暂无票房数据
+              </div>
+            )}
+          </>
         )}
       </div>
     </main>

@@ -1,9 +1,6 @@
 'use client';
 
-import Link from 'next/link';
-
 import { BackButton } from './BackButton';
-import { useSite } from './SiteProvider';
 import { ThemeToggle } from './ThemeToggle';
 import { UserMenu } from './UserMenu';
 
@@ -12,7 +9,6 @@ interface MobileHeaderProps {
 }
 
 const MobileHeader = ({ showBackButton = false }: MobileHeaderProps) => {
-  const { siteName } = useSite();
   return (
     <header className='md:hidden sticky top-0 z-[1000] w-full bg-white border-b border-gray-200 shadow-sm dark:bg-black dark:border-black'>
       <div className='h-12 flex items-center justify-between px-4'>
@@ -26,16 +22,6 @@ const MobileHeader = ({ showBackButton = false }: MobileHeaderProps) => {
           <ThemeToggle />
           <UserMenu />
         </div>
-      </div>
-
-      {/* 中间：Logo（绝对居中） */}
-      <div className='absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2'>
-        <Link
-          href='/'
-          className='text-2xl font-bold text-orange-600 tracking-tight hover:opacity-80 transition-opacity'
-        >
-          {siteName}
-        </Link>
       </div>
     </header>
   );
