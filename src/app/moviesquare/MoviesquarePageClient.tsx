@@ -14,13 +14,16 @@ import {
 } from '@/lib/client/db.client';
 import { getDoubanCategories } from '@/lib/client/douban.client';
 import {
+  BoxOfficeResult,
   DoubanItem,
   DoubanResult,
   MovieSquareItem,
   MovieSquareResult,
 } from '@/lib/types';
 
+const BOX_OFFICE_SOURCE_KEYS = ['douban', 'global'] as const;
 const YEARS = [
+  ...BOX_OFFICE_SOURCE_KEYS,
   'all',
   ...Array.from({ length: 16 }, (_, index) => String(2026 - index)),
 ];
@@ -28,6 +31,20 @@ const YEARS = [
 type MoviesquareTab = 'boxoffice' | 'hot' | 'records';
 type HotSectionKey = (typeof HOT_SECTION_CONFIGS)[number]['key'];
 type MovieSquareRecordType = 'movie' | 'tv';
+type BoxOfficeSourceKey = (typeof BOX_OFFICE_SOURCE_KEYS)[number];
+
+interface MovieSquareDisplayItem extends MovieSquareItem {
+  doubanId?: string;
+  genre?: string;
+  originalTitle?: string;
+  rate?: string;
+  sourceLabel?: string;
+  typeLabel?: string;
+}
+
+interface MovieSquareDisplayResult extends Omit<MovieSquareResult, 'list'> {
+  list: MovieSquareDisplayItem[];
+}
 
 interface HotSection {
   key: HotSectionKey;
@@ -101,7 +118,10 @@ const HOT_SECTION_CONFIGS = [
 ] as const;
 
 function getYearLabel(year: string) {
-  return year === 'all' ? '全部' : year;
+  if (year === 'douban') return '豆瓣';
+  if (year === 'global') return '全球';
+  if (year === 'all') return '中国';
+  return year;
 }
 
 function formatNumber(value?: number) {
@@ -110,6 +130,18 @@ function formatNumber(value?: number) {
   }
 
   return String(Math.round(value));
+}
+
+function formatGrossWanToYi(value: number) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return '-';
+  }
+
+  if (value >= 10000) {
+    return `${(value / 10000).toFixed(2)}亿`;
+  }
+
+  return `${value.toFixed(2)}万`;
 }
 
 async function copyTextToClipboard(text: string) {
@@ -142,6 +174,10 @@ function getInitialYear(value: string | null) {
   return YEARS.includes(value) ? value : '2026';
 }
 
+function isBoxOfficeSource(value: string): value is BoxOfficeSourceKey {
+  return BOX_OFFICE_SOURCE_KEYS.includes(value as BoxOfficeSourceKey);
+}
+
 function getInitialTab(value: string | null): MoviesquareTab {
   if (value === 'records') return 'records';
   return value === 'hot' ? 'hot' : 'boxoffice';
@@ -153,7 +189,7 @@ function getInitialHotSection(value: string | null): HotSectionKey {
     : 'nowplaying';
 }
 
-function getMovieSquareYear(item: MovieSquareItem) {
+function getMovieSquareYear(item: MovieSquareDisplayItem) {
   return item.year || item.releaseDate?.match(/\d{4}/)?.[0] || '';
 }
 
@@ -251,7 +287,7 @@ export default function MoviesquarePageClient() {
   const [selectedYear, setSelectedYear] = useState(() =>
     getInitialYear(searchParams.get('year'))
   );
-  const [data, setData] = useState<MovieSquareResult | null>(null);
+  const [data, setData] = useState<MovieSquareDisplayResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hotSections, setHotSections] = useState<HotSection[]>(() =>
@@ -269,8 +305,10 @@ export default function MoviesquarePageClient() {
   const [hasSearched, setHasSearched] = useState(false);
 
   const title = useMemo(() => {
+    if (selectedYear === 'douban') return '豆瓣电影 Top250';
+    if (selectedYear === 'global') return '全球电影票房排行榜';
     return selectedYear === 'all'
-      ? '电影票房总榜'
+      ? '中国电影票房总榜'
       : `${selectedYear}年电影票房总榜`;
   }, [selectedYear]);
 
@@ -333,6 +371,85 @@ export default function MoviesquarePageClient() {
         setLoading(true);
         setError(null);
 
+        if (selectedYear === 'douban') {
+          const response = await fetch(
+            '/api/douban?type=movie&tag=top250&pageStart=0&pageSize=25',
+            {
+              signal: controller.signal,
+              cache: 'no-store',
+            }
+          );
+          const result = (await response.json()) as DoubanResult;
+
+          if (!response.ok || result.code !== 200) {
+            throw new Error(result.message || `请求失败: ${response.status}`);
+          }
+
+          setData({
+            code: 200,
+            message: '获取成功',
+            selectedYear,
+            yearLabel: '豆瓣电影 Top250',
+            updateTime: '',
+            totalGrossText: '',
+            list: (result.list || []).map((item, index) => ({
+              rank: index + 1,
+              title: item.title,
+              year: item.year || '',
+              releaseDate: '',
+              grossWan: 0,
+              grossText: item.rate || '-',
+              movieId: item.id || '',
+              detailUrl: item.id
+                ? `https://movie.douban.com/subject/${encodeURIComponent(
+                    item.id
+                  )}/`
+                : '',
+              doubanId: item.id || undefined,
+              rate: item.rate || undefined,
+              sourceLabel: '豆瓣',
+              typeLabel: '电影',
+            })),
+          });
+          return;
+        }
+
+        if (selectedYear === 'global') {
+          const response = await fetch('/api/boxoffice/global', {
+            signal: controller.signal,
+            cache: 'no-store',
+          });
+          const result = (await response.json()) as BoxOfficeResult;
+
+          if (!response.ok || result.code !== 200) {
+            throw new Error(result.message || `请求失败: ${response.status}`);
+          }
+
+          setData({
+            code: 200,
+            message: '获取成功',
+            selectedYear,
+            yearLabel: result.yearLabel || '全球电影票房排行榜',
+            updateTime: result.updateTime || '',
+            totalGrossText: '',
+            list: (result.list || []).map((item) => ({
+              rank: item.rank,
+              title: item.title,
+              originalTitle: item.originalTitle,
+              year: item.year || '',
+              releaseDate: item.year || '',
+              grossWan: item.grossWan,
+              grossText: formatGrossWanToYi(item.grossWan),
+              movieId: item.movieId || item.detailUrl || item.title,
+              detailUrl: item.detailUrl || '',
+              genre: item.genre,
+              sourceLabel: '全球票房',
+              typeLabel: item.genre || '-',
+            })),
+          });
+          return;
+        }
+
         const query = selectedYear === 'all' ? '' : `?year=${selectedYear}`;
         const response = await fetch(`/api/moviesquare${query}`, {
           signal: controller.signal,
@@ -344,7 +461,11 @@ export default function MoviesquarePageClient() {
           throw new Error(result.message || `请求失败: ${response.status}`);
         }
 
-        setData(result);
+        setData({
+          ...result,
+          yearLabel:
+            selectedYear === 'all' ? '中国电影票房总榜' : result.yearLabel,
+        });
       } catch (err) {
         if (controller.signal.aborted) return;
         const message = err instanceof Error ? err.message : '获取数据失败';
@@ -481,11 +602,7 @@ export default function MoviesquarePageClient() {
 
   const handleYearClick = (year: string) => {
     const params = new URLSearchParams(searchParams.toString());
-    if (year === 'all') {
-      params.delete('year');
-    } else {
-      params.set('year', year);
-    }
+    params.set('year', year);
 
     const query = params.toString();
     router.replace(`/moviesquare${query ? `?${query}` : ''}`, {
@@ -511,7 +628,7 @@ export default function MoviesquarePageClient() {
     window.location.href = 'SenPlayer://';
   };
 
-  const handleRowClick = (item: MovieSquareItem) => {
+  const handleRowClick = (item: MovieSquareDisplayItem) => {
     if (!item.detailUrl) return;
     window.location.href = item.detailUrl;
   };
@@ -568,15 +685,17 @@ export default function MoviesquarePageClient() {
   });
 
   const createBoxOfficeRecord = (
-    item: MovieSquareItem
+    item: MovieSquareDisplayItem
   ): Omit<MovieSquareRecord, 'saveTime'> => ({
     title: item.title,
     year: getMovieSquareYear(item),
     type: 'movie',
-    typeLabel: '电影',
-    sourceLabel: '票房',
-    grossText: item.grossText,
+    typeLabel: item.typeLabel || '电影',
+    sourceLabel: item.sourceLabel || '票房',
+    rate: item.rate,
+    grossText: item.rate ? undefined : item.grossText,
     detailUrl: item.detailUrl || undefined,
+    doubanId: item.doubanId,
   });
 
   const createRecordSnapshot = (
@@ -956,7 +1075,7 @@ export default function MoviesquarePageClient() {
                   onChange={(event) =>
                     handleSearchQueryChange(event.target.value)
                   }
-                  placeholder='找影视剧综、找影人、找公司、找影院'
+                  placeholder='找影视剧综、找影人'
                   className='h-10 w-full rounded-full border-0 bg-gray-100 pl-10 pr-10 text-[16px] font-medium text-gray-950 outline-none ring-0 placeholder:text-gray-400 focus:ring-0 dark:bg-[#151515] dark:text-gray-100 dark:placeholder:text-gray-600'
                 />
                 {searchQuery && (
@@ -1153,6 +1272,30 @@ export default function MoviesquarePageClient() {
     );
   };
 
+  const boxOfficeColumnLabels =
+    selectedYear === 'douban'
+      ? { second: '评分', third: '年份', fourth: '来源' }
+      : selectedYear === 'global'
+      ? { second: '票房', third: '年份', fourth: '类型' }
+      : { second: '票房', third: '平均票价', fourth: '场均人数' };
+
+  const getBoxOfficeSecondValue = (item: MovieSquareDisplayItem) =>
+    selectedYear === 'douban' ? item.rate || '-' : item.grossText || '-';
+
+  const getBoxOfficeThirdValue = (item: MovieSquareDisplayItem) => {
+    if (isBoxOfficeSource(selectedYear)) {
+      return item.year || '-';
+    }
+
+    return formatNumber(item.avgPrice);
+  };
+
+  const getBoxOfficeFourthValue = (item: MovieSquareDisplayItem) => {
+    if (selectedYear === 'douban') return item.sourceLabel || '豆瓣';
+    if (selectedYear === 'global') return item.typeLabel || '-';
+    return formatNumber(item.avgPeoplePerShow);
+  };
+
   return (
     <main className='min-h-screen bg-white text-gray-950 dark:bg-black dark:text-gray-100'>
       <div className='mx-auto min-h-screen w-full bg-white dark:bg-black md:max-w-[720px] md:border-x md:border-gray-100 md:shadow-sm md:dark:border-gray-900'>
@@ -1276,9 +1419,13 @@ export default function MoviesquarePageClient() {
 
             <div className='grid grid-cols-[49%_22%_15%_14%] bg-gray-50 px-4 py-3 text-[12px] font-medium text-gray-700 dark:bg-[#101010] dark:text-gray-300 md:px-7 md:text-[14px]'>
               <div>排名</div>
-              <div className='text-right'>票房</div>
-              <div className='whitespace-nowrap text-right'>平均票价</div>
-              <div className='whitespace-nowrap text-right'>场均人数</div>
+              <div className='text-right'>{boxOfficeColumnLabels.second}</div>
+              <div className='whitespace-nowrap text-right'>
+                {boxOfficeColumnLabels.third}
+              </div>
+              <div className='whitespace-nowrap text-right'>
+                {boxOfficeColumnLabels.fourth}
+              </div>
             </div>
 
             {loading ? (
@@ -1370,13 +1517,13 @@ export default function MoviesquarePageClient() {
                     </div>
 
                     <div className='whitespace-nowrap text-right text-[14px] font-semibold text-[#c82643] dark:text-[#ff5a70] md:text-[15px]'>
-                      {item.grossText}
+                      {getBoxOfficeSecondValue(item)}
                     </div>
                     <div className='text-right text-[14px] font-medium text-gray-950 dark:text-gray-100 md:text-[15px]'>
-                      {formatNumber(item.avgPrice)}
+                      {getBoxOfficeThirdValue(item)}
                     </div>
                     <div className='text-right text-[14px] font-medium text-gray-950 dark:text-gray-100 md:text-[15px]'>
-                      {formatNumber(item.avgPeoplePerShow)}
+                      {getBoxOfficeFourthValue(item)}
                     </div>
                   </div>
                 ))}
