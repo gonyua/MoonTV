@@ -1,9 +1,17 @@
 'use client';
 
-import { Info } from 'lucide-react';
+import { Info, Search, Trash2, X } from 'lucide-react';
+import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 
+import {
+  addSearchHistory,
+  clearSearchHistory,
+  deleteSearchHistory,
+  getSearchHistory,
+} from '@/lib/client/db.client';
 import { getDoubanCategories } from '@/lib/client/douban.client';
 import {
   DoubanItem,
@@ -42,6 +50,24 @@ interface MovieSquareRecord {
   detailUrl?: string;
   doubanId?: string;
   saveTime: number;
+}
+
+interface DoubanSuggestItem {
+  id: string;
+  title: string;
+  subTitle: string;
+  year: string;
+  type: string;
+  typeLabel: string;
+  poster: string;
+  detailUrl: string;
+  sourceLabel: string;
+}
+
+interface DoubanSuggestResult {
+  code: number;
+  message: string;
+  list: DoubanSuggestItem[];
 }
 
 const MOVIESQUARE_RECORDS_KEY = 'moontv_moviesquare_records';
@@ -215,6 +241,7 @@ function writeMovieSquareRecord(record: Omit<MovieSquareRecord, 'saveTime'>) {
 export default function MoviesquarePageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<MoviesquareTab>(() =>
     getInitialTab(searchParams.get('tab'))
   );
@@ -233,6 +260,13 @@ export default function MoviesquarePageClient() {
   const [records, setRecords] = useState<MovieSquareRecord[]>(() =>
     readMovieSquareRecords()
   );
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchHistory, setSearchHistory] = useState<string[]>([]);
+  const [suggestResults, setSuggestResults] = useState<DoubanSuggestItem[]>([]);
+  const [suggestLoading, setSuggestLoading] = useState(false);
+  const [suggestError, setSuggestError] = useState<string | null>(null);
+  const [hasSearched, setHasSearched] = useState(false);
 
   const title = useMemo(() => {
     return selectedYear === 'all'
@@ -244,6 +278,34 @@ export default function MoviesquarePageClient() {
     if (activeTab !== 'records') return;
     setRecords(readMovieSquareRecords());
   }, [activeTab]);
+
+  useEffect(() => {
+    getSearchHistory().then(setSearchHistory);
+
+    const handleSearchHistoryUpdated = (event: Event) => {
+      const customEvent = event as CustomEvent<string[]>;
+      setSearchHistory(customEvent.detail || []);
+    };
+
+    window.addEventListener('searchHistoryUpdated', handleSearchHistoryUpdated);
+
+    return () => {
+      window.removeEventListener(
+        'searchHistoryUpdated',
+        handleSearchHistoryUpdated
+      );
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isSearchOpen) return;
+
+    const timer = window.setTimeout(() => {
+      searchInputRef.current?.focus({ preventScroll: true });
+    }, 80);
+
+    return () => window.clearTimeout(timer);
+  }, [isSearchOpen]);
 
   const activeHotSection = useMemo(() => {
     return (
@@ -544,6 +606,91 @@ export default function MoviesquarePageClient() {
     }
   };
 
+  const createSuggestRecord = (
+    item: DoubanSuggestItem
+  ): Omit<MovieSquareRecord, 'saveTime'> => ({
+    title: item.title,
+    year: item.year || '',
+    type: item.type === 'tv' ? 'tv' : 'movie',
+    typeLabel: item.typeLabel || (item.type === 'tv' ? '剧集' : '电影'),
+    sourceLabel: '豆瓣搜索',
+    detailUrl: item.detailUrl,
+    doubanId: item.id,
+  });
+
+  const handleSuggestRowClick = (item: DoubanSuggestItem) => {
+    if (item.detailUrl) {
+      window.location.href = item.detailUrl;
+      return;
+    }
+
+    if (item.id) {
+      window.location.href = `https://movie.douban.com/subject/${encodeURIComponent(
+        item.id
+      )}`;
+    }
+  };
+
+  const handleSearchSubmit = async (
+    event?: React.FormEvent<HTMLFormElement>,
+    keyword?: string
+  ) => {
+    event?.preventDefault();
+
+    const trimmed = (keyword ?? searchQuery).trim().replace(/\s+/g, ' ');
+    if (!trimmed) return;
+
+    setSearchQuery(trimmed);
+    setHasSearched(true);
+    setSuggestLoading(true);
+    setSuggestError(null);
+
+    try {
+      await addSearchHistory(trimmed);
+
+      const response = await fetch(
+        `/api/douban/suggest?q=${encodeURIComponent(trimmed)}`,
+        {
+          cache: 'no-store',
+        }
+      );
+      const result = (await response.json()) as DoubanSuggestResult;
+
+      if (!response.ok || result.code !== 200) {
+        throw new Error(result.message || `请求失败: ${response.status}`);
+      }
+
+      setSuggestResults(result.list || []);
+    } catch (err) {
+      setSuggestResults([]);
+      setSuggestError(err instanceof Error ? err.message : '搜索失败');
+    } finally {
+      setSuggestLoading(false);
+    }
+  };
+
+  const handleHistoryClick = (keyword: string) => {
+    setSearchQuery(keyword);
+    void handleSearchSubmit(undefined, keyword);
+  };
+
+  const handleSearchQueryChange = (value: string) => {
+    setSearchQuery(value);
+
+    if (!value.trim()) {
+      setHasSearched(false);
+      setSuggestResults([]);
+      setSuggestError(null);
+    }
+  };
+
+  const openSearchOverlay = () => {
+    flushSync(() => {
+      setIsSearchOpen(true);
+    });
+    searchInputRef.current?.focus({ preventScroll: true });
+  };
+
   const renderSkeletonRows = (count: number) => (
     <div className='divide-y divide-gray-50 dark:divide-gray-900'>
       {Array.from({ length: count }).map((_, index) => (
@@ -559,6 +706,29 @@ export default function MoviesquarePageClient() {
             </div>
           </div>
           <div className='ml-auto h-4 w-14 rounded bg-gray-100 dark:bg-gray-900' />
+          <div className='ml-auto h-4 w-8 rounded bg-gray-100 dark:bg-gray-900' />
+          <div className='ml-auto h-4 w-8 rounded bg-gray-100 dark:bg-gray-900' />
+        </div>
+      ))}
+    </div>
+  );
+
+  const renderSuggestSkeletonRows = (count: number) => (
+    <div className='divide-y divide-gray-50 dark:divide-gray-900'>
+      {Array.from({ length: count }).map((_, index) => (
+        <div
+          key={index}
+          className='grid h-[72px] grid-cols-[49%_22%_15%_14%] items-center px-4 md:h-[82px] md:px-7'
+        >
+          <div className='flex min-w-0 items-center gap-2 pr-2 md:gap-3'>
+            <div className='h-7 w-7 shrink-0 rounded bg-gray-100 dark:bg-gray-900' />
+            <div className='h-[52px] w-9 shrink-0 rounded bg-gray-100 dark:bg-gray-900 md:h-[60px] md:w-[42px]' />
+            <div className='min-w-0 space-y-2'>
+              <div className='h-4 w-24 rounded bg-gray-100 dark:bg-gray-900 md:w-32' />
+              <div className='h-3 w-16 rounded bg-gray-100 dark:bg-gray-900 md:w-20' />
+            </div>
+          </div>
+          <div className='ml-auto h-4 w-12 rounded bg-gray-100 dark:bg-gray-900 md:w-14' />
           <div className='ml-auto h-4 w-8 rounded bg-gray-100 dark:bg-gray-900' />
           <div className='ml-auto h-4 w-8 rounded bg-gray-100 dark:bg-gray-900' />
         </div>
@@ -763,11 +933,231 @@ export default function MoviesquarePageClient() {
     </section>
   );
 
+  const renderSearchOverlay = () => {
+    if (!isSearchOpen) return null;
+
+    const showHistory = !searchQuery.trim();
+
+    return (
+      <div className='fixed inset-0 z-50 overflow-y-auto bg-white text-gray-950 dark:bg-black dark:text-gray-100'>
+        <div className='mx-auto min-h-screen w-full bg-white dark:bg-black md:max-w-[720px] md:border-x md:border-gray-100 md:dark:border-gray-900'>
+          <div className='sticky top-0 z-10 border-b border-gray-100 bg-white/95 px-3 py-3 backdrop-blur dark:border-gray-900 dark:bg-black/95'>
+            <form
+              onSubmit={(event) => void handleSearchSubmit(event)}
+              className='flex items-center gap-3'
+            >
+              <div className='relative min-w-0 flex-1'>
+                <Search className='pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400 dark:text-gray-500' />
+                <input
+                  ref={searchInputRef}
+                  type='search'
+                  enterKeyHint='search'
+                  value={searchQuery}
+                  onChange={(event) =>
+                    handleSearchQueryChange(event.target.value)
+                  }
+                  placeholder='找影视剧综、找影人、找公司、找影院'
+                  className='h-10 w-full rounded-full border-0 bg-gray-100 pl-10 pr-10 text-[16px] font-medium text-gray-950 outline-none ring-0 placeholder:text-gray-400 focus:ring-0 dark:bg-[#151515] dark:text-gray-100 dark:placeholder:text-gray-600'
+                />
+                {searchQuery && (
+                  <button
+                    type='button'
+                    onClick={() => handleSearchQueryChange('')}
+                    className='absolute right-3 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-gray-400 hover:bg-gray-200 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300'
+                    aria-label='清空搜索内容'
+                  >
+                    <X className='h-4 w-4' />
+                  </button>
+                )}
+              </div>
+              <button
+                type='button'
+                onClick={() => setIsSearchOpen(false)}
+                className='h-10 shrink-0 px-1 text-[15px] font-semibold text-gray-700 hover:text-gray-950 dark:text-gray-300 dark:hover:text-white'
+              >
+                取消
+              </button>
+            </form>
+          </div>
+
+          {showHistory ? (
+            <section className='px-4 py-8 md:px-7'>
+              <div className='mb-4 flex items-center justify-between'>
+                <h2 className='text-[17px] font-bold text-gray-800 dark:text-gray-200'>
+                  搜索历史
+                </h2>
+                {searchHistory.length > 0 && (
+                  <button
+                    type='button'
+                    onClick={() => void clearSearchHistory()}
+                    className='flex h-8 w-8 items-center justify-center text-gray-300 hover:text-gray-500 dark:text-gray-600 dark:hover:text-gray-300'
+                    aria-label='清空搜索历史'
+                  >
+                    <Trash2 className='h-4 w-4' />
+                  </button>
+                )}
+              </div>
+              {searchHistory.length > 0 ? (
+                <div className='flex flex-wrap gap-3'>
+                  {searchHistory.map((item) => (
+                    <div
+                      key={item}
+                      className='group inline-flex h-8 items-center rounded-[2px] bg-gray-100 text-[14px] font-medium text-gray-600 transition-colors hover:bg-gray-200 dark:bg-[#151515] dark:text-gray-300 dark:hover:bg-[#202020]'
+                    >
+                      <button
+                        type='button'
+                        onClick={() => handleHistoryClick(item)}
+                        className='h-full px-4'
+                      >
+                        {item}
+                      </button>
+                      <button
+                        type='button'
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void deleteSearchHistory(item);
+                        }}
+                        className='flex h-full items-center pr-3 text-gray-400 opacity-70 transition-opacity hover:opacity-100 dark:text-gray-500'
+                        aria-label={`删除搜索历史 ${item}`}
+                      >
+                        <X className='h-3.5 w-3.5' />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className='py-12 text-center text-sm text-gray-400 dark:text-gray-500'>
+                  暂无搜索历史
+                </div>
+              )}
+            </section>
+          ) : (
+            <section className='border-b border-gray-100 bg-white dark:border-gray-900 dark:bg-black'>
+              <div className='grid grid-cols-[49%_22%_15%_14%] bg-gray-50 px-4 py-3 text-[12px] font-medium text-gray-700 dark:bg-[#101010] dark:text-gray-300 md:px-7 md:text-[14px]'>
+                <div>标题</div>
+                <div className='text-right'>来源</div>
+                <div className='whitespace-nowrap text-right'>年份</div>
+                <div className='whitespace-nowrap text-right'>类型</div>
+              </div>
+
+              {suggestLoading ? (
+                renderSuggestSkeletonRows(6)
+              ) : suggestError ? (
+                <div className='px-5 py-16 text-center text-sm text-gray-500 dark:text-gray-400'>
+                  {suggestError}
+                </div>
+              ) : suggestResults.length ? (
+                <div className='divide-y divide-gray-50 dark:divide-gray-900'>
+                  {suggestResults.map((item, index) => {
+                    const rank = index + 1;
+                    return (
+                      <div
+                        key={`${item.id}-${index}`}
+                        role='link'
+                        tabIndex={0}
+                        onClick={() => handleSuggestRowClick(item)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            handleSuggestRowClick(item);
+                          }
+                        }}
+                        className='grid min-h-[72px] w-full grid-cols-[49%_22%_15%_14%] items-center px-4 text-left transition-colors hover:bg-gray-50 active:bg-gray-100 dark:hover:bg-[#0d0d0d] dark:active:bg-[#151515] md:min-h-[82px] md:px-7'
+                      >
+                        <div className='flex min-w-0 items-center gap-2 pr-2 md:gap-3'>
+                          <span
+                            className={`flex h-[22px] w-[22px] shrink-0 items-center justify-center text-[14px] font-bold ${getRankClassName(
+                              rank
+                            )} ${
+                              rank <= 3
+                                ? 'rounded-md'
+                                : 'rounded-none bg-transparent'
+                            }`}
+                          >
+                            {rank}
+                          </span>
+                          <div className='relative h-[52px] w-9 shrink-0 overflow-hidden rounded bg-gray-100 dark:bg-gray-900 md:h-[60px] md:w-[42px]'>
+                            {item.poster ? (
+                              <Image
+                                src={item.poster}
+                                alt={item.title}
+                                fill
+                                sizes='42px'
+                                className='object-cover'
+                                loading='lazy'
+                              />
+                            ) : null}
+                          </div>
+                          <div className='min-w-0'>
+                            <div className='flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5'>
+                              <button
+                                type='button'
+                                onClick={(event) => {
+                                  void openSenPlayer(
+                                    item.title,
+                                    event,
+                                    createSuggestRecord(item)
+                                  );
+                                }}
+                                className='min-w-0 break-words text-left text-[13px] font-bold leading-tight text-gray-950 dark:text-gray-50 md:text-[15px]'
+                              >
+                                {item.title}
+                              </button>
+                              <button
+                                type='button'
+                                onClick={(event) => {
+                                  openPlayableSearch(
+                                    item.title,
+                                    item.year,
+                                    item.type === 'tv' ? 'tv' : 'movie',
+                                    event,
+                                    createSuggestRecord(item)
+                                  );
+                                }}
+                                className='shrink-0 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 md:text-[11px]'
+                              >
+                                [可播放]
+                              </button>
+                            </div>
+                            <div className='mt-1 truncate text-[12px] leading-none text-gray-500 dark:text-gray-500 md:text-[13px]'>
+                              {item.subTitle || item.year || '-'}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className='whitespace-nowrap text-right text-[14px] font-semibold text-[#c82643] dark:text-[#ff5a70] md:text-[15px]'>
+                          {item.sourceLabel || '豆瓣'}
+                        </div>
+                        <div className='text-right text-[14px] font-medium text-gray-950 dark:text-gray-100 md:text-[15px]'>
+                          {item.year || '-'}
+                        </div>
+                        <div className='text-right text-[14px] font-medium text-gray-950 dark:text-gray-100 md:text-[15px]'>
+                          {item.typeLabel || '-'}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : hasSearched ? (
+                <div className='px-5 py-16 text-center text-sm text-gray-500 dark:text-gray-400'>
+                  暂无搜索结果
+                </div>
+              ) : (
+                <div className='px-5 py-16 text-center text-sm text-gray-400 dark:text-gray-500'>
+                  输入关键词后点击搜索
+                </div>
+              )}
+            </section>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <main className='min-h-screen bg-white text-gray-950 dark:bg-black dark:text-gray-100'>
       <div className='mx-auto min-h-screen w-full bg-white dark:bg-black md:max-w-[720px] md:border-x md:border-gray-100 md:shadow-sm md:dark:border-gray-900'>
         <div className='sticky top-0 z-20 border-b border-gray-100 bg-white/95 backdrop-blur dark:border-gray-900 dark:bg-black/95'>
-          <div className='flex justify-center px-4 py-2 md:px-8'>
+          <div className='relative flex justify-center px-4 py-2 md:px-8'>
             <div className='inline-flex overflow-hidden rounded-[3px] border border-[#e83355] bg-white text-[13px] font-bold leading-none dark:bg-black md:text-[14px]'>
               {[
                 { label: '热映', value: 'hot' as MoviesquareTab },
@@ -791,6 +1181,14 @@ export default function MoviesquarePageClient() {
                 );
               })}
             </div>
+            <button
+              type='button'
+              onClick={openSearchOverlay}
+              className='absolute right-3 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-gray-700 transition-colors hover:bg-gray-100 hover:text-[#d8213d] dark:text-gray-300 dark:hover:bg-[#151515] dark:hover:text-[#ff5a70] md:right-6'
+              aria-label='打开搜索'
+            >
+              <Search className='h-5 w-5' />
+            </button>
           </div>
           {activeTab === 'hot' ? (
             <div className='overflow-x-auto scrollbar-hide'>
@@ -991,6 +1389,7 @@ export default function MoviesquarePageClient() {
           </>
         )}
       </div>
+      {renderSearchOverlay()}
     </main>
   );
 }
