@@ -10,6 +10,8 @@ import NavsImportModal from '@/components/navs/NavsImportModal';
 import NavsSidebar from '@/components/navs/NavsSidebar';
 import NavsSiteList from '@/components/navs/NavsSiteList';
 import NavsSiteModal from '@/components/navs/NavsSiteModal';
+import { ThemeToggle } from '@/components/ThemeToggle';
+import { UserMenu } from '@/components/UserMenu';
 
 export default function NavsPageClient() {
   const [navsData, setNavsData] = useState<NavsData>({
@@ -108,6 +110,11 @@ export default function NavsPageClient() {
 
   return (
     <div className='flex h-screen bg-gray-50 dark:bg-gray-900'>
+      <div className='fixed right-4 top-2 z-[1000] flex items-center gap-2'>
+        <ThemeToggle />
+        <UserMenu />
+      </div>
+
       <NavsSidebar
         categories={navsData.categories}
         activeCategory={activeCategory}

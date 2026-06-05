@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="navs icon">
+  <defs>
+    <linearGradient id="bg" x1="76" x2="436" y1="64" y2="448" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0f766e"/>
+      <stop offset="0.52" stop-color="#0891b2"/>
+      <stop offset="1" stop-color="#1e40af"/>
+    </linearGradient>
+    <linearGradient id="tile" x1="150" x2="368" y1="146" y2="354" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e0f2fe"/>
+      <stop offset="1" stop-color="#a7f3d0"/>
+    </linearGradient>
+    <filter id="shadow" x="-24%" y="-24%" width="148%" height="148%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#083344" flood-opacity="0.34"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="url(#bg)"/>
+  <circle cx="378" cy="136" r="46" fill="#fb923c" opacity="0.96"/>
+  <g filter="url(#shadow)">
+    <path
+      d="M252 118c10-27 48-27 58 0l76 206c9 25-17 48-40 36l-78-40-78 40c-23 12-49-11-40-36l76-206Z"
+      fill="#f8fafc"
+    />
+    <path
+      d="M282 138 218 312l50-26 50 26-64-174c-4-10-18-10-22 0Z"
+      fill="url(#tile)"
+    />
+  </g>
+  <g fill="#f8fafc" opacity="0.95">
+    <rect x="112" y="102" width="62" height="62" rx="18"/>
+    <rect x="112" y="348" width="62" height="62" rx="18"/>
+    <rect x="338" y="348" width="62" height="62" rx="18"/>
+  </g>
+  <g fill="none" stroke="#cffafe" stroke-linecap="round" stroke-width="22" opacity="0.82">
+    <path d="M174 133h70"/>
+    <path d="M174 379h55"/>
+    <path d="M322 379h16"/>
+  </g>
+</svg>
